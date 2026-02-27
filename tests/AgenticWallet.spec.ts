@@ -117,7 +117,7 @@ describe('AgenticWallet', () => {
                 outActions: null,
                 signature: agentSignature,
             }),
-        ).rejects.toThrow('Exit code: 45');
+        ).rejects.toThrow('Exit code: 135');
         expect(await agenticWallet.getSeqno()).toBe(1);
 
         const ownerSignature = sign(agentSignable.hash(), masterKeys.secretKey);
@@ -180,7 +180,7 @@ describe('AgenticWallet', () => {
                 outActions: null,
                 signature: oldSignature,
             }),
-        ).rejects.toThrow('Exit code: 45');
+        ).rejects.toThrow('Exit code: 135');
 
         const newSignature = sign(signable.hash(), newAgentKeys.secretKey);
         const newSignatureResult = await agenticWallet.sendExternalSignedRequest({
