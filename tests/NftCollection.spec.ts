@@ -1,8 +1,13 @@
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
 import { beginCell, Cell, toNano } from '@ton/core';
-import { keyPairFromSeed, sign } from '@ton/crypto';
-import { AgenticWallet, agenticWalletDataToCell, bufferToUint256 } from '../wrappers/AgenticWallet';
+import {
+    AgenticWallet,
+    WalletRuntimeData,
+    bufferToUint256,
+    calculateWalletIndex,
+} from '../wrappers/AgenticWallet';
 import { NftCollection } from '../wrappers/NftCollection';
+import { keyPairFromSeed } from '@ton/crypto';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
 
@@ -42,7 +47,6 @@ describe('NftCollection', () => {
         );
 
         const deployResult = await nftCollection.sendDeploy(admin.getSender(), toNano('0.05'));
-
         expect(deployResult.transactions).toHaveTransaction({
             from: admin.address,
             to: nftCollection.address,
@@ -51,7 +55,17 @@ describe('NftCollection', () => {
         });
     });
 
-    it('returns collection getters', async () => {
+    function createRuntimeData(): WalletRuntimeData {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 31));
+        return {
+            ownerAddress: user.address,
+            nftItemContent: beginCell().storeStringTail('item-808.json').endCell(),
+            originOperatorPublicKey: bufferToUint256(operatorKeys.publicKey),
+            operatorPublicKey: bufferToUint256(operatorKeys.publicKey),
+        };
+    }
+
+    it('keeps collection getters and admin rotation intact', async () => {
         const data = await nftCollection.getCollectionData();
         expect(data.nextItemIndex).toBe(-1);
         expect(data.adminAddress.equals(admin.address)).toBe(true);
@@ -60,9 +74,7 @@ describe('NftCollection', () => {
         expect(royalty.numerator).toBe(0);
         expect(royalty.denominator).toBe(0);
         expect(royalty.destination).toBeNull();
-    });
 
-    it('allows admin rotation only from current admin', async () => {
         const forbidden = await nftCollection.sendChangeCollectionAdmin(
             outsider.getSender(),
             toNano('0.05'),
@@ -83,77 +95,74 @@ describe('NftCollection', () => {
             success: true,
         });
 
-        const data = await nftCollection.getCollectionData();
-        expect(data.adminAddress.equals(user.address)).toBe(true);
+        const changedData = await nftCollection.getCollectionData();
+        expect(changedData.adminAddress.equals(user.address)).toBe(true);
     });
 
-    it('deploys agentic wallet for a valid signed request', async () => {
-        const masterKeys = keyPairFromSeed(Buffer.alloc(32, 11));
-        const agentKeys = keyPairFromSeed(Buffer.alloc(32, 12));
-        const initParamsCell = agenticWalletDataToCell({
-            subwalletId: 777,
-            agentPublicKey: bufferToUint256(agentKeys.publicKey),
-            masterPublicKey: bufferToUint256(masterKeys.publicKey),
-            masterWalletAddress: user.address,
-            nftItemContent: beginCell().storeStringTail('item-777.json').endCell(),
-        });
-        const userSignature = sign(initParamsCell.hash(), masterKeys.secretKey);
-        const itemIndex = BigInt(`0x${initParamsCell.hash().toString('hex')}`);
-        const nftAddress = await nftCollection.getNftAddressByIndex(itemIndex);
+    it('derives wallet address by index consistently with local state init', async () => {
+        const runtimeData = createRuntimeData();
+        const itemIndex = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey);
+        const indexedAddress = await nftCollection.getNftAddressByIndex(itemIndex);
+        const localAddress = AgenticWallet.createFromConfig(
+            {
+                nftItemIndex: itemIndex,
+                collectionAddress: nftCollection.address,
+            },
+            walletCode,
+        ).address;
 
-        const result = await nftCollection.sendRequestDeployNft(user.getSender(), toNano('0.2'), {
+        expect(indexedAddress.equals(localAddress)).toBe(true);
+        expect((await nftCollection.getWalletAddressByOwnerAndOriginKey(user.address, runtimeData.originOperatorPublicKey)).equals(localAddress)).toBe(true);
+    });
+
+    it('works with wallets deployed directly to the address derived from collection indexing', async () => {
+        const runtimeData = createRuntimeData();
+        const itemIndex = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey);
+        const indexedAddress = await nftCollection.getNftAddressByIndex(itemIndex);
+        const wallet = blockchain.openContract(
+            AgenticWallet.createFromConfig(
+                {
+                    nftItemIndex: itemIndex,
+                    collectionAddress: nftCollection.address,
+                },
+                walletCode,
+            ),
+        );
+
+        expect(wallet.address.equals(indexedAddress)).toBe(true);
+
+        const result = await wallet.sendDeployWallet(user.getSender(), toNano('0.2'), {
             queryId: 1n,
-            userSignature,
-            initParams: initParamsCell,
+            walletData: runtimeData,
         });
         expect(result.transactions).toHaveTransaction({
             from: user.address,
-            to: nftCollection.address,
-            success: true,
-        });
-        expect(result.transactions).toHaveTransaction({
-            to: nftAddress,
+            to: wallet.address,
             deploy: true,
             success: true,
         });
 
-        const deployedWallet = blockchain.openContract(AgenticWallet.createFromAddress(nftAddress));
-        expect(await deployedWallet.getSubwalletId()).toBe(777);
-        expect(await deployedWallet.getPublicKey()).toBe(bufferToUint256(masterKeys.publicKey));
-
-        const nftData = await deployedWallet.getNftData();
+        const nftData = await wallet.getNftData();
         expect(nftData.isInitialized).toBe(true);
+        expect(nftData.nftItemIndex).toBe(itemIndex);
         expect(nftData.collectionAddress.equals(nftCollection.address)).toBe(true);
         expect(nftData.ownerAddress?.equals(user.address)).toBe(true);
     });
 
-    it('rejects deploy request with invalid user signature', async () => {
-        const masterKeys = keyPairFromSeed(Buffer.alloc(32, 21));
-        const wrongSigner = keyPairFromSeed(Buffer.alloc(32, 22));
-        const initParamsCell = agenticWalletDataToCell({
-            subwalletId: 778,
-            agentPublicKey: bufferToUint256(keyPairFromSeed(Buffer.alloc(32, 23)).publicKey),
-            masterPublicKey: bufferToUint256(masterKeys.publicKey),
-            masterWalletAddress: user.address,
-            nftItemContent: null,
-        });
-        const invalidSignature = sign(initParamsCell.hash(), wrongSigner.secretKey);
-        const itemIndex = BigInt(`0x${initParamsCell.hash().toString('hex')}`);
-        const nftAddress = await nftCollection.getNftAddressByIndex(itemIndex);
-
-        const result = await nftCollection.sendRequestDeployNft(user.getSender(), toNano('0.2'), {
-            queryId: 2n,
-            userSignature: invalidSignature,
-            initParams: initParamsCell,
-        });
-        expect(result.transactions).toHaveTransaction({
-            from: user.address,
+    it('no longer accepts legacy deploy requests', async () => {
+        const legacyBody = beginCell().storeUint(0x00000001, 32).endCell();
+        const result = await outsider.send({
             to: nftCollection.address,
-            exitCode: 135,
+            value: toNano('0.05'),
+            bounce: true,
+            body: legacyBody,
+        });
+
+        expect(result.transactions).toHaveTransaction({
+            from: outsider.address,
+            to: nftCollection.address,
+            exitCode: 0xffff,
             success: false,
         });
-
-        const nftContract = await blockchain.getContract(nftAddress);
-        expect(nftContract.accountState?.type ?? 'uninit').toBe('uninit');
     });
 });

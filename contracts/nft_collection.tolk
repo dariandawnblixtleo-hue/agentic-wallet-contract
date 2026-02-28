@@ -5,58 +5,12 @@ import "wallet_storage"
 
 const ERROR_UNKNOWN_OPERATION = 0xffff
 
-fun calcNftAddress(itemIndex: uint256, collectionAddress: address, nftItemCode: cell): AutoDeployAddress {
-    val emptyNftItemStorage: NftItemStorage = {
-        nftItemIndex: itemIndex,
-        collectionAddress: collectionAddress,
-        walletData: null,
-        agentDisabled: false,
-        seqno: 0,
-    };
-
-    return {
-        stateInit: {
-            code: nftItemCode,
-            data: emptyNftItemStorage.toCell()
-        }
-    }
-}
-
-type AllowedMessageToNftCollection =
-    | RequestDeployNftMsg
-    | ChangeCollectionAdminMsg
+type AllowedMessageToNftCollection = ChangeCollectionAdminMsg
 
 fun onInternalMessage(in: InMessage) {
     val msg = lazy AllowedMessageToNftCollection.fromSlice(in.body);
 
     match (msg) {
-        // Standard deployment flow.
-        RequestDeployNftMsg => {
-            var storage = lazy NftCollectionStorage.load();
-            val signature = msg.userSignature;
-            val initParamsCell = msg.initParams;
-            val nftItemIndex = initParamsCell.hash();
-            val agenticWalletData = lazy msg.initParams.load();
-
-            // Deploy only wallets explicitly authorized by the owner.
-            assert (isSignatureValid(initParamsCell.hash(), signature as slice, agenticWalletData.masterPublicKey)) throw ERROR_INVALID_SIGNATURE;
-
-            val nftAddress = calcNftAddress(nftItemIndex, contract.getAddress(), storage.nftItemCode);
-            createMessage({
-                bounce: BounceMode.NoBounce,
-                value: 0,
-                dest: nftAddress,
-                body: DeployNftMsg {
-                    queryId: msg.queryId,
-                    agenticWalletData: msg.initParams,
-                }
-            }).send(SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);  // Forward all TON to fund the new wallet.
-        }
-
-        // TODO: deployment via jetton transfer
-
-        // TODO: admin commands (update NFT code, update collection code)
-
         ChangeCollectionAdminMsg => {
             var storage = lazy NftCollectionStorage.load();
             assert (in.senderAddress == storage.adminAddress) throw ERROR_INCORRECT_SENDER;
@@ -65,7 +19,6 @@ fun onInternalMessage(in: InMessage) {
         }
 
         else => {
-            // Ignore empty messages, reject unknown opcodes.
             assert (in.body.isEmpty()) throw ERROR_UNKNOWN_OPERATION
         }
     }
@@ -88,8 +41,8 @@ get fun get_collection_data(): (int, cell, address) {
 
 get fun get_nft_address_by_index(itemIndex: int): address {
     val storage = lazy NftCollectionStorage.load();
-    val nftDeployed = calcNftAddress(itemIndex, contract.getAddress(), storage.nftItemCode);
-    return nftDeployed.calculateAddress();
+    val walletAddress = calcWalletAddress(itemIndex, contract.getAddress(), storage.nftItemCode);
+    return walletAddress.calculateAddress();
 }
 
 get fun royalty_params(): (int, int, address) {
@@ -100,11 +53,10 @@ get fun get_nft_content(itemIndex: int, individualNftContent: Cell<SnakeString>)
     val storage = lazy NftCollectionStorage.load();
     val content = lazy storage.content.load();
 
-    // Construct a response from common and individual metadata.
     return OffchainMetadataReply {
         string: beginCell()
-            .storeSlice(content.commonContent.load())   // Assume it's short (no refs).
-            .storeRef(individualNftContent)             // First ref for snake-encoded tail.
+            .storeSlice(content.commonContent.load())
+            .storeRef(individualNftContent)
             .endCell().beginParse()
     }.toCell()
 }

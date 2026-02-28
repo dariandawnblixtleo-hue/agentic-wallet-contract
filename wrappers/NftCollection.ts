@@ -10,9 +10,8 @@ import {
     Sender,
     TupleBuilder,
 } from '@ton/core';
-import { AgenticWalletData, agenticWalletDataToCell } from './AgenticWallet';
+import { calculateWalletIndex } from './AgenticWallet';
 
-const OP_REQUEST_DEPLOY_NFT = 0x00000001;
 const OP_CHANGE_COLLECTION_ADMIN = 0x00000003;
 
 export type CollectionContent = {
@@ -24,12 +23,6 @@ export type NftCollectionConfig = {
     adminAddress: Address;
     content: Cell | CollectionContent;
     nftItemCode: Cell;
-};
-
-export type RequestDeployNftMessage = {
-    queryId: bigint;
-    userSignature: Buffer;
-    initParams: Cell | AgenticWalletData;
 };
 
 export type NftCollectionData = {
@@ -44,12 +37,6 @@ export type RoyaltyParams = {
     destination: Address | null;
 };
 
-function ensureSignature(signature: Buffer) {
-    if (signature.length !== 64) {
-        throw new Error(`Invalid signature length: ${signature.length}. Expected 64 bytes`);
-    }
-}
-
 function resolveCollectionContentCell(content: Cell | CollectionContent): Cell {
     if (content instanceof Cell) {
         return content;
@@ -62,25 +49,11 @@ function resolveCollectionContentCell(content: Cell | CollectionContent): Cell {
     return beginCell().storeRef(content.collectionMetadata).storeRef(commonContentCell).endCell();
 }
 
-function resolveInitParamsCell(initParams: Cell | AgenticWalletData): Cell {
-    return initParams instanceof Cell ? initParams : agenticWalletDataToCell(initParams);
-}
-
 export function nftCollectionConfigToCell(config: NftCollectionConfig): Cell {
     return beginCell()
         .storeAddress(config.adminAddress)
         .storeRef(resolveCollectionContentCell(config.content))
         .storeRef(config.nftItemCode)
-        .endCell();
-}
-
-export function createRequestDeployNftBody(message: RequestDeployNftMessage): Cell {
-    ensureSignature(message.userSignature);
-    return beginCell()
-        .storeUint(OP_REQUEST_DEPLOY_NFT, 32)
-        .storeUint(message.queryId, 64)
-        .storeBuffer(message.userSignature)
-        .storeRef(resolveInitParamsCell(message.initParams))
         .endCell();
 }
 
@@ -109,15 +82,6 @@ export class NftCollection implements Contract {
             bounce,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: beginCell().endCell(),
-        });
-    }
-
-    async sendRequestDeployNft(provider: ContractProvider, via: Sender, value: bigint, message: RequestDeployNftMessage) {
-        await provider.internal(via, {
-            value,
-            bounce: true,
-            sendMode: SendMode.PAY_GAS_SEPARATELY,
-            body: createRequestDeployNftBody(message),
         });
     }
 
@@ -150,6 +114,14 @@ export class NftCollection implements Contract {
         tb.writeNumber(itemIndex);
         const result = await provider.get('get_nft_address_by_index', tb.build());
         return result.stack.readAddress();
+    }
+
+    async getWalletAddressByOwnerAndOriginKey(
+        provider: ContractProvider,
+        ownerAddress: Address,
+        originOperatorPublicKey: bigint,
+    ): Promise<Address> {
+        return this.getNftAddressByIndex(provider, calculateWalletIndex(ownerAddress, originOperatorPublicKey));
     }
 
     async getRoyaltyParams(provider: ContractProvider): Promise<RoyaltyParams> {
