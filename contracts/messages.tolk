@@ -66,6 +66,11 @@ struct (0xea4e36cf) ChangeOperatorMsg {
     newOperatorPublicKey: uint256
 }
 
+struct (0x1a0b9d51) ChangeNftContentMsg {
+    queryId: uint64
+    newNftItemContent: cell?
+}
+
 struct (0x00000003) ChangeCollectionAdminMsg {
     queryId: uint64
     newAdminAddress: address

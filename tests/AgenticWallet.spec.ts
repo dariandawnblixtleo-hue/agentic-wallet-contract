@@ -7,6 +7,7 @@ import {
     bufferToUint256,
     calculateWalletIndex,
     createAddExtensionExtraAction,
+    createChangeNftContentBody,
     createChangeOperatorBody,
     createDeployWalletBody,
     createExternalSignedRequestBodyWithoutSignature,
@@ -594,6 +595,46 @@ describe('AgenticWallet', () => {
             on: wallet.address,
             success: true,
         });
+    });
+
+    it('allows only owner to change nft item content', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 18));
+        const initialContent = beginCell().storeStringTail('wallet-before.json').endCell();
+        const updatedContent = beginCell().storeStringTail('wallet-after.json').endCell();
+        const runtimeData = createRuntimeData(operatorKeys, initialContent);
+        const { wallet } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        expect(createChangeNftContentBody(17n, updatedContent).equals(
+            beginCell().storeUint(0x1a0b9d51, 32).storeUint(17n, 64).storeMaybeRef(updatedContent).endCell(),
+        )).toBe(true);
+
+        const forbidden = await wallet.sendChangeNftContent(
+            stranger.getSender(),
+            toNano('0.05'),
+            18n,
+            updatedContent,
+        );
+        expect(forbidden.transactions).toHaveTransaction({
+            from: stranger.address,
+            to: wallet.address,
+            exitCode: 50,
+            success: false,
+        });
+        expect((await wallet.getNftData()).nftItemContent?.equals(initialContent)).toBe(true);
+
+        const changed = await wallet.sendChangeNftContent(
+            owner.getSender(),
+            toNano('0.05'),
+            19n,
+            updatedContent,
+        );
+        expect(changed.transactions).toHaveTransaction({
+            from: owner.address,
+            to: wallet.address,
+            success: true,
+        });
+        expect((await wallet.getNftData()).nftItemContent?.equals(updatedContent)).toBe(true);
     });
 
     it('deactivates the agent by setting operator key to zero while owner extension keeps working', async () => {

@@ -82,6 +82,7 @@ type AllowedMessageToWallet =
     | ExtensionActionRequest
     | InternalSignedRequest
     | ChangeOperatorMsg
+    | ChangeNftContentMsg
 
 type AllowedExternalMessageToWallet = ExternalSignedRequest
 
@@ -189,6 +190,15 @@ fun onInternalMessage(in: InMessage) {
             assert (in.senderAddress == ownerAddress) throw ERROR_INCORRECT_SENDER;
 
             walletData.operatorPublicKey = msg.newOperatorPublicKey;
+            storage.walletData = walletData.toCell();
+            storage.save();
+        }
+        
+        // CUSTOM: owner-only internal NFT content change.
+        ChangeNftContentMsg => {
+            assert (in.senderAddress == ownerAddress) throw ERROR_INCORRECT_SENDER;
+
+            walletData.nftItemContent = msg.newNftItemContent;
             storage.walletData = walletData.toCell();
             storage.save();
         }

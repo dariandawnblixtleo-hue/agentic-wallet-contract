@@ -20,6 +20,7 @@ const OP_DEPLOY_WALLET = 0x0609e47b;
 const OP_INTERNAL_SIGNED_REQUEST = 0x73696e74;
 const OP_EXTERNAL_SIGNED_REQUEST = 0x7369676e;
 const OP_CHANGE_OPERATOR = 0xea4e36cf;
+const OP_CHANGE_NFT_CONTENT = 0x1a0b9d51;
 
 export type WalletRuntimeData = {
     ownerAddress: Address;
@@ -234,6 +235,10 @@ export function createChangeOperatorBody(queryId: bigint, newOperatorPublicKey: 
     return beginCell().storeUint(OP_CHANGE_OPERATOR, 32).storeUint(queryId, 64).storeUint(newOperatorPublicKey, 256).endCell();
 }
 
+export function createChangeNftContentBody(queryId: bigint, newNftItemContent: Cell | null): Cell {
+    return beginCell().storeUint(OP_CHANGE_NFT_CONTENT, 32).storeUint(queryId, 64).storeMaybeRef(newNftItemContent).endCell();
+}
+
 export function createExtensionActionRequestBody(request: ExtensionActionRequest): Cell {
     return storeActionSection(
         beginCell()
@@ -316,6 +321,21 @@ export class AgenticWallet implements Contract {
             bounce: true,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: createChangeOperatorBody(queryId, newOperatorPublicKey),
+        });
+    }
+
+    async sendChangeNftContent(
+        provider: ContractProvider,
+        via: Sender,
+        value: bigint,
+        queryId: bigint,
+        newNftItemContent: Cell | null,
+    ) {
+        await provider.internal(via, {
+            value,
+            bounce: true,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: createChangeNftContentBody(queryId, newNftItemContent),
         });
     }
 

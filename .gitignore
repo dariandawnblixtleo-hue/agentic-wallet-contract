@@ -21,4 +21,7 @@ Session.vim
 .nvim/
 .emacs/
 .helix/
+
+# Tolk contracts
 05_wallet-v5
+02_nft
