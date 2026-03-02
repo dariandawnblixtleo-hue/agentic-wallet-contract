@@ -122,10 +122,9 @@ fun onExternalMessage(inMsgBody: slice) {
 @on_bounced_policy("manual")        // tell the compiler "don't insert code to filter out bounced messages"
 fun onInternalMessage(in: InMessage) {
     var storage = lazy AgenticWalletStorage.load();
-    var walletData = loadWalletData(storage);
 
     // CUSTOM: before initialization the wallet accepts only direct deploy.
-    if (walletData == null) {
+    if (storage.walletData == null) {
         val deployMsg = DeployWalletMsg.fromSlice(in.body, {
             throwIfOpcodeDoesNotMatch: ERROR_NOT_INITIALIZED,
         });
@@ -133,7 +132,6 @@ fun onInternalMessage(in: InMessage) {
         return;
     }
 
-    val ownerAddress = (walletData as WalletRuntimeData).ownerAddress;
     val msg = lazy AllowedMessageToWallet.fromSlice(in.body);
 
     match (msg) {
@@ -146,8 +144,8 @@ fun onInternalMessage(in: InMessage) {
             var signature = in.body.getLastBits(SIZE_SIGNATURE);
             var signedSlice = in.body.removeLastBits(SIZE_SIGNATURE);
 
-            // Можно ли пройти проверку при publicKey == 0?
-            if (!isSignatureValid(signedSlice.hash(), signature, walletData.operatorPublicKey)) {
+            var walletData = lazy storage.walletData.load();
+            if (walletData.operatorPublicKey == 0 || !isSignatureValid(signedSlice.hash(), signature, walletData.operatorPublicKey)) {
                 return;
             }
 
@@ -167,7 +165,9 @@ fun onInternalMessage(in: InMessage) {
 
         ExtensionActionRequest => {
             // CUSTOM: skip checks if senderAddress == ownerAddress
+            var walletData = lazy storage.walletData.load();
             if (in.senderAddress != walletData.ownerAddress) {
+                // END CUSTOM CODE
                 var (senderWorkchain, senderAddrHash) = in.senderAddress.getWorkchainAndHash();
                 var myWorkchain = contract.getAddress().getWorkchain();
                 if (myWorkchain != senderWorkchain) {
@@ -187,7 +187,8 @@ fun onInternalMessage(in: InMessage) {
 
         // CUSTOM: owner-only internal operator rotation.
         ChangeOperatorMsg => {
-            assert (in.senderAddress == ownerAddress) throw ERROR_INCORRECT_SENDER;
+            var walletData = lazy storage.walletData.load();
+            assert (in.senderAddress == walletData.ownerAddress) throw ERROR_INCORRECT_SENDER;
 
             walletData.operatorPublicKey = msg.newOperatorPublicKey;
             storage.walletData = walletData.toCell();
@@ -196,14 +197,25 @@ fun onInternalMessage(in: InMessage) {
         
         // CUSTOM: owner-only internal NFT content change.
         ChangeNftContentMsg => {
-            assert (in.senderAddress == ownerAddress) throw ERROR_INCORRECT_SENDER;
-
+            var walletData = lazy storage.walletData.load();
+            assert (in.senderAddress == walletData.ownerAddress) throw ERROR_INCORRECT_SENDER;
+            
             walletData.nftItemContent = msg.newNftItemContent;
             storage.walletData = walletData.toCell();
             storage.save();
         }
 
         else => {
+            // CUSTOM: bounce SBT-related operations
+            // int op::destroy() asm "0x1f04537a PUSHINT";
+            // int op::revoke() asm "0x6f89f5e3 PUSHINT";
+            // int op::take_excess() asm "0xd136d3b3 PUSHINT";
+            // int op::transfer() asm "0x5fcc3d14 PUSHINT"
+            // int op::prove_ownership() asm "0x04ded148 PUSHINT";;
+            if (in.body.remainingBitsCount() >= 32) {
+                val op = in.body.loadUint(32);
+                assert (op != 0x1f04537a && op != 0x6f89f5e3 && op != 0xd136d3b3 && op != 0x5fcc3d14 && op != 0x04ded148) throw ERROR_UNKNOWN_OPERATION;
+            }
             // if opcode is strange or body is empty at all (for instance, bounced messages)
             // just ignore, do not throw
         }
@@ -263,4 +275,12 @@ get fun get_nft_data(): (bool, uint256, address, address?, cell?) {
     }
     val initializedWalletData = walletData as WalletRuntimeData;
     return (true, storage.nftItemIndex, storage.collectionAddress, initializedWalletData.ownerAddress, initializedWalletData.nftItemContent);
+}
+
+get fun get_authority_address(): address {
+    return createAddressNone() as address;
+}
+
+get fun  get_revoked_time(): uint64 {
+    return 0;
 }

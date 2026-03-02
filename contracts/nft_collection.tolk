@@ -3,7 +3,6 @@ import "collection_storage"
 import "messages"
 import "wallet_storage"
 
-const ERROR_UNKNOWN_OPERATION = 0xffff
 
 type AllowedMessageToNftCollection = ChangeCollectionAdminMsg
 
