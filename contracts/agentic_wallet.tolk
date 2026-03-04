@@ -5,7 +5,8 @@ import "messages"
 import "c5-register-validation"
 import "agentic_wallet_custom"
 
-const SIZE_SIGNATURE = 512
+const SIZE_SIGNATURE = 512;
+const MIN_SIGNED_REQUEST_BITS = 32 + 256 + 32 + 32 + 1 + 1;
 
 
 @inline_ref
@@ -61,8 +62,7 @@ fun processExtraActions(extraActions: SnakedExtraActions, isExtension: bool) {
 
 fun processActions(
     outActions: OutActionsCell?,
-    hasExtraActions: bool,
-    extraActions: SnakedExtraActions,
+    extraActions: Cell<SnakedExtraActions>?,  // CUSTOM: Cell<SnakedExtraActions> instead of SnakedExtraActions
     isExternal: bool,
     isExtension: bool,
 ) {
@@ -70,8 +70,9 @@ fun processActions(
         // Simply set the C5 register with all pre-computed actions after verification:
         setTvmRegisterC5(outActions.verifyC5Actions(isExternal));
     }
-    if (hasExtraActions) {
-        processExtraActions(extraActions, isExtension);
+    // CUSTOM: load extraActions ref
+    if (extraActions != null) {
+        processExtraActions(extraActions.load(), isExtension);
     }
 }
 
@@ -115,7 +116,7 @@ fun onExternalMessage(inMsgBody: slice) {
     storage.save();
 
     commitContractDataAndActions();
-    processActions(msg.outActions, msg.hasExtraActions, msg.extraActions, true, false);
+    processActions(msg.outActions, msg.extraActions, true, false);
 }
 
 
@@ -136,7 +137,7 @@ fun onInternalMessage(in: InMessage) {
 
     match (msg) {
         InternalSignedRequest => {
-            val bodyLongEnough = in.body.remainingBitsCount() >= SIZE_SIGNATURE + 96 + 256;
+            val bodyLongEnough = in.body.remainingBitsCount() >= SIZE_SIGNATURE + MIN_SIGNED_REQUEST_BITS;
             if (!bodyLongEnough) {
                 return;     // don't try to parse it (it will fail), just ignore
             }
@@ -159,8 +160,9 @@ fun onInternalMessage(in: InMessage) {
             storage.isSignatureAllowed = true;
             storage.seqno += 1;
             storage.save();
-
-            processActions(msg.outActions, msg.hasExtraActions, msg.extraActions, false, false);
+            
+            commitContractDataAndActions();
+            processActions(msg.outActions, msg.extraActions, false, false);
         }
 
         ExtensionActionRequest => {
@@ -182,7 +184,11 @@ fun onInternalMessage(in: InMessage) {
                 }
             }
 
-            processActions(msg.outActions, msg.hasExtraActions, msg.extraActions, false, true);
+            var extraActionsRef: Cell<SnakedExtraActions>? = null;
+            if (msg.hasExtraActions) {
+                extraActionsRef = msg.extraActions.toCell();
+            }
+            processActions(msg.outActions, extraActionsRef, false, true);
         }
 
         // CUSTOM: owner-only internal operator rotation.

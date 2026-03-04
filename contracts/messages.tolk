@@ -40,8 +40,7 @@ struct (0x73696e74) InternalSignedRequest {
     validUntil: uint32
     seqno: uint32
     outActions: OutActionsCell?
-    hasExtraActions: bool
-    extraActions: SnakedExtraActions
+    extraActions: Cell<SnakedExtraActions>?  // CUSTOM: delete "hasExtraActions", move "extraActions" to ref.
     // Ends with a signature (512 bits), parsed and verified separately.
 }
 
@@ -50,8 +49,7 @@ struct (0x7369676e) ExternalSignedRequest {
     validUntil: uint32
     seqno: uint32
     outActions: OutActionsCell?
-    hasExtraActions: bool
-    extraActions: SnakedExtraActions
+    extraActions: Cell<SnakedExtraActions>?  // CUSTOM: delete "hasExtraActions", move "extraActions" to ref.
     // Ends with a signature (512 bits), parsed and verified separately.
 }
 

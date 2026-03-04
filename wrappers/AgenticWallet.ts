@@ -57,7 +57,6 @@ export type InternalSignedRequest = {
     validUntil: number;
     seqno: number;
     outActions?: Cell | null;
-    hasExtraActions?: boolean;
     extraActions?: Cell | null;
     signature: Buffer;
 };
@@ -67,7 +66,6 @@ export type ExternalSignedRequest = {
     validUntil: number;
     seqno: number;
     outActions?: Cell | null;
-    hasExtraActions?: boolean;
     extraActions?: Cell | null;
     signature: Buffer;
 };
@@ -120,7 +118,7 @@ function resolveWalletDataCell(src: WalletRuntimeData | Cell): Cell {
     return src instanceof Cell ? src : walletRuntimeDataToCell(src);
 }
 
-function resolveExtraActions(hasExtraActions?: boolean, extraActions?: Cell | null) {
+function resolveExtensionExtraActions(hasExtraActions?: boolean, extraActions?: Cell | null) {
     const cell = extraActions ?? emptyExtraActionsCell();
     return {
         hasExtraActions: hasExtraActions ?? !isEmptyCell(cell),
@@ -153,21 +151,30 @@ function storeActionSection(
     hasExtraActions?: boolean,
     extraActions?: Cell | null,
 ) {
-    const extra = resolveExtraActions(hasExtraActions, extraActions);
+    const extra = resolveExtensionExtraActions(hasExtraActions, extraActions);
     return builder
         .storeMaybeRef(outActions ?? null)
         .storeBit(extra.hasExtraActions)
         .storeSlice(extra.extraActions.beginParse());
 }
 
+function storeSignedActionSection(
+    builder: ReturnType<typeof beginCell>,
+    outActions: Cell | null | undefined,
+    extraActions?: Cell | null,
+) {
+    return builder
+        .storeMaybeRef(outActions ?? null)
+        .storeMaybeRef(extraActions ?? null);
+}
+
 function createSignedRequestBody(
     opcode: number,
     request: Omit<ExternalSignedRequest, 'signature'> | Omit<InternalSignedRequest, 'signature'>,
 ): Cell {
-    return storeActionSection(
+    return storeSignedActionSection(
         storeSignedRequestPrefix(beginCell(), opcode, request.walletNftIndex, request.validUntil, request.seqno),
         request.outActions,
-        request.hasExtraActions,
         request.extraActions,
     ).endCell();
 }
@@ -361,6 +368,14 @@ export class AgenticWallet implements Contract {
         await provider.external(createExternalSignedRequestBody(request));
     }
 
+    async sendInternal(provider: ContractProvider, via: Sender, opts: Parameters<ContractProvider['internal']>[1]) {
+        await provider.internal(via, opts);
+    }
+
+    async sendExternal(provider: ContractProvider, body: Cell) {
+        await provider.external(body);
+    }
+
     async getSeqno(provider: ContractProvider): Promise<number> {
         const result = await provider.get('seqno', []);
         return result.stack.readNumber();
@@ -376,6 +391,11 @@ export class AgenticWallet implements Contract {
         return result.stack.readBigNumber();
     }
 
+    async getSubwalletId(provider: ContractProvider): Promise<bigint> {
+        const result = await provider.get('get_subwallet_id', []);
+        return result.stack.readBigNumber();
+    }
+
     async getIsSignatureAllowed(provider: ContractProvider): Promise<boolean> {
         const result = await provider.get('is_signature_allowed', []);
         return result.stack.readBoolean();
@@ -388,6 +408,12 @@ export class AgenticWallet implements Contract {
             return emptyExtensionsDict();
         }
         return Dictionary.loadDirect(Dictionary.Keys.BigUint(256), Dictionary.Values.Bool(), cell.beginParse());
+    }
+
+    async getExtensionsArray(provider: ContractProvider): Promise<Address[]> {
+        return [...(await this.getExtensions(provider)).keys()].map((key) =>
+            Address.parseRaw(`${this.address.workChain}:${key.toString(16).padStart(64, '0')}`),
+        );
     }
 
     async getNftData(provider: ContractProvider): Promise<AgenticWalletNftData> {

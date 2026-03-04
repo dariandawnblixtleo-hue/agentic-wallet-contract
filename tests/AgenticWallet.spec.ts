@@ -111,7 +111,6 @@ describe('AgenticWallet', () => {
         outActions?: Cell | null;
         extraActions?: Cell | null;
         secretKey: Buffer;
-        hasExtraActions?: boolean;
     }) {
         const signable = createExternalSignedRequestBodyWithoutSignature({
             walletNftIndex: params.walletNftIndex,
@@ -119,7 +118,6 @@ describe('AgenticWallet', () => {
             seqno: params.seqno,
             outActions: params.outActions ?? null,
             extraActions: params.extraActions ?? null,
-            hasExtraActions: params.hasExtraActions,
         });
         return {
             walletNftIndex: params.walletNftIndex,
@@ -127,7 +125,6 @@ describe('AgenticWallet', () => {
             seqno: params.seqno,
             outActions: params.outActions ?? null,
             extraActions: params.extraActions ?? null,
-            hasExtraActions: params.hasExtraActions,
             signature: sign(signable.hash(), params.secretKey),
         };
     }
@@ -664,7 +661,6 @@ describe('AgenticWallet', () => {
             seqno: 0,
             outActions: null,
             extraActions: null,
-            hasExtraActions: false,
         });
         await wallet.sendInternalSignedRequest(stranger.getSender(), toNano('0.05'), {
             walletNftIndex: index,
@@ -672,7 +668,6 @@ describe('AgenticWallet', () => {
             seqno: 0,
             outActions: null,
             extraActions: null,
-            hasExtraActions: false,
             signature: sign(internalSignedSignable.hash(), operatorKeys.secretKey),
         });
         expect(await wallet.getSeqno()).toBe(0);
