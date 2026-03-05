@@ -6,10 +6,12 @@ import "messages"
 fun assertDeploySenderAllowed(storage: AgenticWalletStorage, senderAddress: address, walletData: WalletRuntimeData, senderOriginOperatorPublicKey: uint256) {
     if (senderOriginOperatorPublicKey == 0) {
         assert (senderAddress == walletData.ownerAddress) throw ERROR_INCORRECT_SENDER;
+        assert (walletData.deployedByUser) throw ERROR_INCORRECT_SENDER;
         return;
     }
 
-    val senderIndex = calcWalletIndex(walletData.ownerAddress, senderOriginOperatorPublicKey);
+    assert (!walletData.deployedByUser) throw ERROR_INCORRECT_SENDER;
+    val senderIndex = calcWalletIndex(walletData.ownerAddress, senderOriginOperatorPublicKey, true);
     val expectedSenderAddress = calcWalletAddress(
         senderIndex,
         storage.collectionAddress,
@@ -24,7 +26,7 @@ fun initWallet(storage: AgenticWalletStorage, senderAddress: address, msg: Deplo
     storage.walletData = msg.walletData;
     val walletData = lazy msg.walletData.load();
     assert (walletData.operatorPublicKey == walletData.originOperatorPublicKey) throw ERROR_INVALID_DEPLOY_DATA;
-    val expectedIndex = calcWalletIndex(walletData.ownerAddress, walletData.originOperatorPublicKey);
+    val expectedIndex = calcWalletIndex(walletData.ownerAddress, walletData.originOperatorPublicKey, walletData.deployedByUser);
     assert (expectedIndex == storage.nftItemIndex) throw ERROR_INVALID_DEPLOY_INDEX;
     
     val (ownerWorkchain, _) = walletData.ownerAddress.getWorkchainAndHash();

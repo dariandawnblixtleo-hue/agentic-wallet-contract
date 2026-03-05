@@ -22,7 +22,7 @@ import { TransactionDescriptionGeneric } from '@ton/core/src/types/TransactionDe
 import { TransactionComputeVm } from '@ton/core/src/types/TransactionComputePhase';
 import { default as config } from './config';
 import { ActionSetCode, ActionSetData } from './test-only-actions';
-import { AgenticWallet } from '../../wrappers/AgenticWallet';
+import { AgenticWallet, calculateWalletIndex } from '../../wrappers/AgenticWallet';
 import { createBodyForAgenticWallet, Opcodes, TestWallet, AgenticWalletV5Test } from './custom-agentic-wallet-v5';
 
 describe('Wallet V5 sign auth external', () => {
@@ -59,8 +59,9 @@ describe('Wallet V5 sign auth external', () => {
             nftItemContent: null,
             originOperatorPublicKey: BigInt('0x' + _keypair.publicKey.toString('hex')),
             operatorPublicKey: BigInt('0x' + _keypair.publicKey.toString('hex')),
+            deployedByUser: true,
         };
-        const _walletId = BigInt(`0x${beginCell().storeAddress(runtimeData.ownerAddress).storeUint(runtimeData.originOperatorPublicKey, 256).endCell().hash().toString('hex')}`);
+        const _walletId = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey, true);
 
         const _walletV5 = blockchain.openContract(
             new AgenticWalletV5Test(
@@ -109,8 +110,9 @@ describe('Wallet V5 sign auth external', () => {
             nftItemContent: null,
             originOperatorPublicKey: BigInt('0x' + keypair.publicKey.toString('hex')),
             operatorPublicKey: BigInt('0x' + keypair.publicKey.toString('hex')),
+            deployedByUser: true,
         };
-        walletId = BigInt(`0x${beginCell().storeAddress(runtimeData.ownerAddress).storeUint(runtimeData.originOperatorPublicKey, 256).endCell().hash().toString('hex')}`);
+        walletId = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey, true);
 
         walletV5 = blockchain.openContract(
             new AgenticWalletV5Test(

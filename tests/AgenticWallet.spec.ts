@@ -66,18 +66,25 @@ describe('AgenticWallet', () => {
         });
     });
 
-    function createRuntimeData(operatorKeys: { publicKey: Buffer }, nftItemContent: Cell | null = null): WalletRuntimeData {
+    function createRuntimeData(
+        operatorKeys: { publicKey: Buffer },
+        nftItemContent: Cell | null = null,
+        deployedByUser = true,
+    ): WalletRuntimeData {
         const publicKey = bufferToUint256(operatorKeys.publicKey);
         return {
             ownerAddress: owner.address,
             nftItemContent,
             originOperatorPublicKey: publicKey,
             operatorPublicKey: publicKey,
+            deployedByUser,
         };
     }
 
     function openWalletByRuntimeData(runtimeData: WalletRuntimeData, nftItemIndex?: bigint) {
-        const index = nftItemIndex ?? calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey);
+        const index =
+            nftItemIndex ??
+            calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey, runtimeData.deployedByUser ?? true);
         const wallet = blockchain.openContract(
             AgenticWallet.createFromConfig(
                 {
@@ -135,15 +142,19 @@ describe('AgenticWallet', () => {
         const expectedIndex = BigInt(`0x${walletIndexSeedToCell({
             ownerAddress: owner.address,
             originOperatorPublicKey: runtimeData.originOperatorPublicKey,
+            deployedByUser: runtimeData.deployedByUser ?? true,
         }).hash().toString('hex')}`);
 
-        expect(calculateWalletIndex(owner.address, runtimeData.originOperatorPublicKey)).toBe(expectedIndex);
+        expect(calculateWalletIndex(owner.address, runtimeData.originOperatorPublicKey, runtimeData.deployedByUser ?? true)).toBe(
+            expectedIndex,
+        );
 
         const initCell = beginCell()
             .storeAddress(owner.address)
             .storeMaybeRef(runtimeData.nftItemContent)
             .storeUint(runtimeData.originOperatorPublicKey, 256)
             .storeUint(runtimeData.operatorPublicKey, 256)
+            .storeBit(runtimeData.deployedByUser ?? true)
             .endCell();
         expect(createDeployWalletBody({ queryId: 55n, walletData: runtimeData }).equals(
             beginCell()
@@ -211,10 +222,26 @@ describe('AgenticWallet', () => {
         expect(nftData.isInitialized).toBe(false);
     });
 
+    it('rejects direct owner deploy when runtime data is marked as non-user deployment', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 19));
+        const runtimeData = createRuntimeData(operatorKeys, null, false);
+        const { wallet } = openWalletByRuntimeData(runtimeData);
+
+        const result = await deployWallet(wallet, owner, runtimeData);
+        expect(result.transactions).toHaveTransaction({
+            from: owner.address,
+            to: wallet.address,
+            exitCode: 50,
+            success: false,
+        });
+
+        expect((await wallet.getNftData()).isInitialized).toBe(false);
+    });
+
     it('rejects deploy with mismatched wallet index and keeps wallet logically uninitialized', async () => {
         const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 3));
         const runtimeData = createRuntimeData(operatorKeys);
-        const wrongIndex = calculateWalletIndex(owner.address, bufferToUint256(keyPairFromSeed(Buffer.alloc(32, 4)).publicKey));
+        const wrongIndex = calculateWalletIndex(owner.address, bufferToUint256(keyPairFromSeed(Buffer.alloc(32, 4)).publicKey), true);
         const { wallet } = openWalletByRuntimeData(runtimeData, wrongIndex);
 
         const result = await deployWallet(wallet, owner, runtimeData);
@@ -237,6 +264,7 @@ describe('AgenticWallet', () => {
             nftItemContent: null,
             originOperatorPublicKey: bufferToUint256(originKeys.publicKey),
             operatorPublicKey: bufferToUint256(operatorKeys.publicKey),
+            deployedByUser: true,
         };
         const { wallet } = openWalletByRuntimeData(runtimeData);
 
@@ -255,7 +283,7 @@ describe('AgenticWallet', () => {
         const operatorA = keyPairFromSeed(Buffer.alloc(32, 5));
         const operatorB = keyPairFromSeed(Buffer.alloc(32, 6));
         const walletAData = createRuntimeData(operatorA);
-        const walletBData = createRuntimeData(operatorB);
+        const walletBData = createRuntimeData(operatorB, null, false);
 
         const { wallet: walletA, index: walletAIndex } = openWalletByRuntimeData(walletAData);
         const { wallet: walletB, index: walletBIndex } = openWalletByRuntimeData(walletBData);
@@ -308,7 +336,7 @@ describe('AgenticWallet', () => {
         const operatorA = keyPairFromSeed(Buffer.alloc(32, 7));
         const operatorB = keyPairFromSeed(Buffer.alloc(32, 8));
         const walletAData = createRuntimeData(operatorA);
-        const walletBData = createRuntimeData(operatorB);
+        const walletBData = createRuntimeData(operatorB, null, false);
 
         const { wallet: walletA, index: walletAIndex } = openWalletByRuntimeData(walletAData);
         const { wallet: walletB } = openWalletByRuntimeData(walletBData);
@@ -349,6 +377,97 @@ describe('AgenticWallet', () => {
 
         const nftData = await walletB.getNftData();
         expect(nftData.isInitialized).toBe(false);
+    });
+
+    it('rejects wallet-to-wallet deploy when deployer wallet is not user-root', async () => {
+        const operatorA = keyPairFromSeed(Buffer.alloc(32, 20));
+        const operatorB = keyPairFromSeed(Buffer.alloc(32, 21));
+        const operatorC = keyPairFromSeed(Buffer.alloc(32, 22));
+        const walletAData = createRuntimeData(operatorA);
+        const walletBData = createRuntimeData(operatorB, null, false);
+        const walletCData = createRuntimeData(operatorC, null, false);
+
+        const { wallet: walletA, index: walletAIndex } = openWalletByRuntimeData(walletAData);
+        const { wallet: walletB, index: walletBIndex } = openWalletByRuntimeData(walletBData);
+        const { wallet: walletC } = openWalletByRuntimeData(walletCData);
+        await deployWallet(walletA, owner, walletAData);
+
+        const deployBBody = createDeployWalletBody({
+            queryId: 9n,
+            walletData: walletBData,
+            senderOriginOperatorPublicKey: walletAData.originOperatorPublicKey,
+        });
+        const outActionsToB = beginCell()
+            .store(
+                storeOutList([
+                    {
+                        type: 'sendMsg',
+                        mode: SendMode.PAY_GAS_SEPARATELY | SendMode.IGNORE_ERRORS,
+                        outMsg: internal({
+                            to: walletB.address,
+                            value: toNano('0.05'),
+                            bounce: true,
+                            init: walletB.init!,
+                            body: deployBBody,
+                        }),
+                    },
+                ]),
+            )
+            .endCell();
+        const validUntil = Math.floor(Date.now() / 1000) + 3600;
+        const reqA = createSignedExternalRequest({
+            walletNftIndex: walletAIndex,
+            validUntil,
+            seqno: 0,
+            outActions: outActionsToB,
+            secretKey: operatorA.secretKey,
+        });
+        const deployBResult = await walletA.sendExternalSignedRequest(reqA);
+        expect(deployBResult.transactions).toHaveTransaction({
+            to: walletB.address,
+            deploy: true,
+            success: true,
+        });
+        expect((await walletB.getNftData()).nftItemIndex).toBe(walletBIndex);
+
+        const deployCBody = createDeployWalletBody({
+            queryId: 10n,
+            walletData: walletCData,
+            senderOriginOperatorPublicKey: walletBData.originOperatorPublicKey,
+        });
+        const outActionsToC = beginCell()
+            .store(
+                storeOutList([
+                    {
+                        type: 'sendMsg',
+                        mode: SendMode.PAY_GAS_SEPARATELY | SendMode.IGNORE_ERRORS,
+                        outMsg: internal({
+                            to: walletC.address,
+                            value: toNano('0.01'),
+                            bounce: true,
+                            init: walletC.init!,
+                            body: deployCBody,
+                        }),
+                    },
+                ]),
+            )
+            .endCell();
+        const reqB = createSignedExternalRequest({
+            walletNftIndex: walletBIndex,
+            validUntil,
+            seqno: 0,
+            outActions: outActionsToC,
+            secretKey: operatorB.secretKey,
+        });
+        const deployCResult = await walletB.sendExternalSignedRequest(reqB);
+        expect(deployCResult.transactions).toHaveTransaction({
+            from: walletB.address,
+            to: walletC.address,
+            exitCode: 50,
+            success: false,
+        });
+
+        expect((await walletC.getNftData()).isInitialized).toBe(false);
     });
 
     it('supports wallet-v5 external request validation and signature mode toggling', async () => {

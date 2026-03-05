@@ -43,8 +43,9 @@ describe('Wallet V5 get methods', () => {
             // CUSTOM: wallet id is derived from owner + origin key, so publicKey directly shapes get_subwallet_id().
             originOperatorPublicKey: bufferToUint256((params?.publicKey ?? keypair.publicKey)),
             operatorPublicKey: bufferToUint256((params?.publicKey ?? keypair.publicKey)),
+            deployedByUser: true,
         };
-        walletId = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey);
+        walletId = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey, true);
 
         walletV5 = blockchain.openContract(
             new AgenticWalletV5Test(
@@ -124,7 +125,7 @@ describe('Wallet V5 get methods', () => {
         });
 
         // CUSTOM: AgenticWallet returns nftItemIndex from owner+origin key instead of packed wallet-v5 wallet_id.
-        const expectedWalletId = calculateWalletIndex(deployer.address, bufferToUint256(customKeypair.publicKey));
+        const expectedWalletId = calculateWalletIndex(deployer.address, bufferToUint256(customKeypair.publicKey), true);
         const actualWalletId = await walletV5.getWalletId();
         expect(actualWalletId).toEqual(expectedWalletId);
     });

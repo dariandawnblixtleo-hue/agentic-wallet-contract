@@ -3,6 +3,7 @@ type ExtensionsDict = map<uint256, bool>
 struct WalletIndexSeed {
     ownerAddress: address
     originOperatorPublicKey: uint256
+    deployedByUser: bool
 }
 
 struct WalletRuntimeData {
@@ -10,6 +11,7 @@ struct WalletRuntimeData {
     nftItemContent: cell?
     originOperatorPublicKey: uint256
     operatorPublicKey: uint256
+    deployedByUser: bool
 }
 
 struct AgenticWalletStorage {
@@ -21,10 +23,11 @@ struct AgenticWalletStorage {
     walletData: Cell<WalletRuntimeData>?
 }
 
-fun calcWalletIndex(ownerAddress: address, originOperatorPublicKey: uint256): uint256 {
+fun calcWalletIndex(ownerAddress: address, originOperatorPublicKey: uint256, deployedByUser: bool): uint256 {
     return WalletIndexSeed {
         ownerAddress,
         originOperatorPublicKey,
+        deployedByUser,
     }.toCell().hash();
 }
 

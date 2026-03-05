@@ -27,11 +27,13 @@ export type WalletRuntimeData = {
     nftItemContent?: Cell | null;
     originOperatorPublicKey: bigint;
     operatorPublicKey: bigint;
+    deployedByUser?: boolean;
 };
 
 export type WalletIndexSeed = {
     ownerAddress: Address;
     originOperatorPublicKey: bigint;
+    deployedByUser?: boolean;
 };
 
 export type AgenticWalletConfig = {
@@ -88,6 +90,7 @@ export function walletRuntimeDataToCell(data: WalletRuntimeData): Cell {
         .storeMaybeRef(data.nftItemContent ?? null)
         .storeUint(data.originOperatorPublicKey, 256)
         .storeUint(data.operatorPublicKey, 256)
+        .storeBit(data.deployedByUser ?? true)
         .endCell();
 }
 
@@ -191,11 +194,11 @@ export function bufferToUint256(src: Buffer): bigint {
 }
 
 export function walletIndexSeedToCell(seed: WalletIndexSeed): Cell {
-    return beginCell().storeAddress(seed.ownerAddress).storeUint(seed.originOperatorPublicKey, 256).endCell();
+    return beginCell().storeAddress(seed.ownerAddress).storeUint(seed.originOperatorPublicKey, 256).storeBit(seed.deployedByUser ?? true).endCell();
 }
 
-export function calculateWalletIndex(ownerAddress: Address, originOperatorPublicKey: bigint): bigint {
-    return BigInt(`0x${walletIndexSeedToCell({ ownerAddress, originOperatorPublicKey }).hash().toString('hex')}`);
+export function calculateWalletIndex(ownerAddress: Address, originOperatorPublicKey: bigint, deployedByUser = true): bigint {
+    return BigInt(`0x${walletIndexSeedToCell({ ownerAddress, originOperatorPublicKey, deployedByUser }).hash().toString('hex')}`);
 }
 
 export function agenticWalletConfigToCell(config: AgenticWalletConfig): Cell {

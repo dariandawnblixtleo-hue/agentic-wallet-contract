@@ -14,7 +14,7 @@ export async function run(provider: NetworkProvider, args: string[] = []) {
 
     const collectionAddress = Address.parse(args[0]);
     const operatorPublicKey = BigInt(args[1]);
-    const walletIndex = calculateWalletIndex(senderAddress, operatorPublicKey);
+    const walletIndex = calculateWalletIndex(senderAddress, operatorPublicKey, true);
 
     const collection = provider.open(NftCollection.createFromAddress(collectionAddress));
     const walletCode = await compile('AgenticWallet');
@@ -40,6 +40,7 @@ export async function run(provider: NetworkProvider, args: string[] = []) {
             nftItemContent: null,
             originOperatorPublicKey: operatorPublicKey,
             operatorPublicKey,
+            deployedByUser: true,
         },
     });
 

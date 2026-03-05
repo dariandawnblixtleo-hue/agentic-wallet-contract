@@ -74,8 +74,9 @@ describe('Wallet V5 extensions auth', () => {
             nftItemContent: null,
             originOperatorPublicKey: bufferToUint256(keypair.publicKey),
             operatorPublicKey: bufferToUint256(keypair.publicKey),
+            deployedByUser: true,
         };
-        walletId = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey);
+        walletId = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey, true);
         walletV5 = blockchain.openContract(
             new AgenticWalletV5Test(
                 AgenticWallet.createFromConfig(

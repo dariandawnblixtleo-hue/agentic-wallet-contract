@@ -244,6 +244,7 @@ function runtimeDataCellFromConfig(config: WalletV5Config, workchain = 0): Cell 
         .storeMaybeRef(null)
         .storeUint(pk, 256)
         .storeUint(pk, 256)
+        .storeBit(true)
         .endCell();
 }
 

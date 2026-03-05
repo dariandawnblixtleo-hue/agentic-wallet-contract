@@ -120,8 +120,9 @@ export class NftCollection implements Contract {
         provider: ContractProvider,
         ownerAddress: Address,
         originOperatorPublicKey: bigint,
+        deployedByUser = true,
     ): Promise<Address> {
-        return this.getNftAddressByIndex(provider, calculateWalletIndex(ownerAddress, originOperatorPublicKey));
+        return this.getNftAddressByIndex(provider, calculateWalletIndex(ownerAddress, originOperatorPublicKey, deployedByUser));
     }
 
     async getRoyaltyParams(provider: ContractProvider): Promise<RoyaltyParams> {

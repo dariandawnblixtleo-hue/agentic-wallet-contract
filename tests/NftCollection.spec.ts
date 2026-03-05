@@ -62,6 +62,7 @@ describe('NftCollection', () => {
             nftItemContent: beginCell().storeStringTail('item-808.json').endCell(),
             originOperatorPublicKey: bufferToUint256(operatorKeys.publicKey),
             operatorPublicKey: bufferToUint256(operatorKeys.publicKey),
+            deployedByUser: true,
         };
     }
 
@@ -101,7 +102,7 @@ describe('NftCollection', () => {
 
     it('derives wallet address by index consistently with local state init', async () => {
         const runtimeData = createRuntimeData();
-        const itemIndex = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey);
+        const itemIndex = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey, true);
         const indexedAddress = await nftCollection.getNftAddressByIndex(itemIndex);
         const localAddress = AgenticWallet.createFromConfig(
             {
@@ -112,12 +113,12 @@ describe('NftCollection', () => {
         ).address;
 
         expect(indexedAddress.equals(localAddress)).toBe(true);
-        expect((await nftCollection.getWalletAddressByOwnerAndOriginKey(user.address, runtimeData.originOperatorPublicKey)).equals(localAddress)).toBe(true);
+        expect((await nftCollection.getWalletAddressByOwnerAndOriginKey(user.address, runtimeData.originOperatorPublicKey, true)).equals(localAddress)).toBe(true);
     });
 
     it('works with wallets deployed directly to the address derived from collection indexing', async () => {
         const runtimeData = createRuntimeData();
-        const itemIndex = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey);
+        const itemIndex = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey, true);
         const indexedAddress = await nftCollection.getNftAddressByIndex(itemIndex);
         const wallet = blockchain.openContract(
             AgenticWallet.createFromConfig(
