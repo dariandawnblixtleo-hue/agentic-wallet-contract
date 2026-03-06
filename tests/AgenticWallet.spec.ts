@@ -18,7 +18,7 @@ import {
     walletIndexSeedToCell,
     WalletRuntimeData,
 } from '../wrappers/AgenticWallet';
-import { NftCollection } from '../wrappers/NftCollection';
+import { buildOnchainMetadata, NftCollection } from '../wrappers/NftCollection';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
 
@@ -47,10 +47,10 @@ describe('AgenticWallet', () => {
             NftCollection.createFromConfig(
                 {
                     adminAddress: owner.address,
-                    content: {
-                        collectionMetadata: beginCell().storeStringTail('https://meta.example/collection.json').endCell(),
-                        commonContent: 'https://meta.example/items/',
-                    },
+                    content: buildOnchainMetadata({
+                        name: 'Agentic Wallets',
+                        description: 'Test collection',
+                    }),
                     nftItemCode: walletCode,
                 },
                 collectionCode,

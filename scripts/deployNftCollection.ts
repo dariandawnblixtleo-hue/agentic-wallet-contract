@@ -1,5 +1,5 @@
-import { beginCell, toNano } from '@ton/core';
-import { NftCollection } from '../wrappers/NftCollection';
+import { toNano } from '@ton/core';
+import { buildOnchainMetadata, NftCollection } from '../wrappers/NftCollection';
 import { compile, NetworkProvider } from '@ton/blueprint';
 
 export async function run(provider: NetworkProvider) {
@@ -14,10 +14,11 @@ export async function run(provider: NetworkProvider) {
         NftCollection.createFromConfig(
             {
                 adminAddress,
-                content: {
-                    collectionMetadata: beginCell().storeStringTail('https://meta.example/collection.json').endCell(),
-                    commonContent: 'https://meta.example/items/',
-                },
+                content: buildOnchainMetadata({
+                    uri: 'https://webdom.market/agentic_wallets/collection.json',
+                    name: 'Agentic Wallets',
+                    description: 'Test collection of agentic wallets',
+                }),
                 nftItemCode: walletCode,
             },
             collectionCode,

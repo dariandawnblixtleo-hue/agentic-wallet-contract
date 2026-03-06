@@ -1,7 +1,8 @@
 import { Address, toNano } from '@ton/core';
 import { AgenticWallet, calculateWalletIndex } from '../wrappers/AgenticWallet';
-import { NftCollection } from '../wrappers/NftCollection';
+import { buildOnchainMetadata, NftCollection } from '../wrappers/NftCollection';
 import { compile, NetworkProvider } from '@ton/blueprint';
+import { buildMetadataDict } from '../wrappers/buildOnchain';
 
 export async function run(provider: NetworkProvider, args: string[] = []) {
     const senderAddress = provider.sender().address;
@@ -33,11 +34,11 @@ export async function run(provider: NetworkProvider, args: string[] = []) {
         throw new Error('Collection-derived wallet address does not match local stateInit');
     }
 
-    await wallet.sendDeployWallet(provider.sender(), toNano('0.2'), {
+    await wallet.sendDeployWallet(provider.sender(), toNano('0.03'), {
         queryId: 0n,
         walletData: {
             ownerAddress: senderAddress,
-            nftItemContent: null,
+            nftItemContent: buildOnchainMetadata({name: "Agent #1"}),
             originOperatorPublicKey: operatorPublicKey,
             operatorPublicKey,
             deployedByUser: true,

@@ -11,12 +11,20 @@ import {
     TupleBuilder,
 } from '@ton/core';
 import { calculateWalletIndex } from './AgenticWallet';
+export {
+    buildOnchainMetadata,
+    buildOnchainMetadataValue,
+    onchainMetadataKey,
+    ONCHAIN_CONTENT_PREFIX,
+    SNAKE_CONTENT_PREFIX,
+    type OnchainMetadata,
+    type OnchainMetadataValue,
+} from './buildOnchain';
 
 const OP_CHANGE_COLLECTION_ADMIN = 0x00000003;
 
 export type CollectionContent = {
     collectionMetadata: Cell;
-    commonContent: Cell | string;
 };
 
 export type NftCollectionConfig = {
@@ -41,12 +49,7 @@ function resolveCollectionContentCell(content: Cell | CollectionContent): Cell {
     if (content instanceof Cell) {
         return content;
     }
-    const commonContentCell =
-        typeof content.commonContent === 'string'
-            ? beginCell().storeStringTail(content.commonContent).endCell()
-            : content.commonContent;
-
-    return beginCell().storeRef(content.collectionMetadata).storeRef(commonContentCell).endCell();
+    return content.collectionMetadata;
 }
 
 export function nftCollectionConfigToCell(config: NftCollectionConfig): Cell {
@@ -134,7 +137,7 @@ export class NftCollection implements Contract {
         };
     }
 
-    async getNftContent(provider: ContractProvider, itemIndex: bigint, individualNftContent: Cell): Promise<Cell> {
+    async getNftContent(provider: ContractProvider, itemIndex: bigint, individualNftContent: Cell | null): Promise<Cell> {
         const tb = new TupleBuilder();
         tb.writeNumber(itemIndex);
         tb.writeCell(individualNftContent);

@@ -6,7 +6,7 @@ import {
     bufferToUint256,
     calculateWalletIndex,
 } from '../wrappers/AgenticWallet';
-import { NftCollection } from '../wrappers/NftCollection';
+import { buildOnchainMetadata, NftCollection } from '../wrappers/NftCollection';
 import { keyPairFromSeed } from '@ton/crypto';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
@@ -25,21 +25,23 @@ describe('NftCollection', () => {
     let user: SandboxContract<TreasuryContract>;
     let outsider: SandboxContract<TreasuryContract>;
     let nftCollection: SandboxContract<NftCollection>;
+    let collectionMetadata: Cell;
 
     beforeEach(async () => {
         blockchain = await Blockchain.create();
         admin = await blockchain.treasury('admin');
         user = await blockchain.treasury('user');
         outsider = await blockchain.treasury('outsider');
+        collectionMetadata = buildOnchainMetadata({
+            name: 'Agentic Wallets',
+            description: 'Collection metadata for tests',
+        });
 
         nftCollection = blockchain.openContract(
             NftCollection.createFromConfig(
                 {
                     adminAddress: admin.address,
-                    content: {
-                        collectionMetadata: beginCell().storeStringTail('https://meta.example/collection.json').endCell(),
-                        commonContent: 'https://meta.example/items/',
-                    },
+                    content: collectionMetadata,
                     nftItemCode: walletCode,
                 },
                 collectionCode,
@@ -69,6 +71,7 @@ describe('NftCollection', () => {
     it('keeps collection getters and admin rotation intact', async () => {
         const data = await nftCollection.getCollectionData();
         expect(data.nextItemIndex).toBe(-1);
+        expect(data.collectionMetadata.equals(collectionMetadata)).toBe(true);
         expect(data.adminAddress.equals(admin.address)).toBe(true);
 
         const royalty = await nftCollection.getRoyaltyParams();
@@ -98,6 +101,18 @@ describe('NftCollection', () => {
 
         const changedData = await nftCollection.getCollectionData();
         expect(changedData.adminAddress.equals(user.address)).toBe(true);
+    });
+
+    it('returns onchain individual nft metadata content', async () => {
+        const individualMetadata = buildOnchainMetadata({
+            name: 'Agentic Wallet #808',
+            description: 'Individual onchain metadata',
+        });
+
+        const content = await nftCollection.getNftContent(808n, individualMetadata);
+        const expected = individualMetadata;
+
+        expect(content.equals(expected)).toBe(true);
     });
 
     it('derives wallet address by index consistently with local state init', async () => {
@@ -167,3 +182,15 @@ describe('NftCollection', () => {
         });
     });
 });
+
+
+/*
+curl -sS 'https://toncenter.com/api/v3/runGetMethod' \
+  -H 'content-type: application/json' \
+  -H "x-api-key: c2de0a8e6e2628fcccf98b1ee23201fd1188c4e0dfd2c0bd2ad2bdb438d2adcd" \
+  --data-raw '{
+    "address":"EQCBXQ3koH3gyUVvF5AU2sLm6XOh_R3dV9WoVIl1b-A-_tMf",
+    "method":"get_nft_address_by_index",
+    "stack":[{"type":"num","value":"0"}]
+  }' | jq
+*/

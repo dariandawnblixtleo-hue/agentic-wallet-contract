@@ -23,17 +23,12 @@ fun onInternalMessage(in: InMessage) {
     }
 }
 
-struct (0x01) OffchainMetadataReply {
-    string: SnakeString
-}
-
 get fun get_collection_data(): (int, cell, address) {
     val storage = lazy NftCollectionStorage.load();
-    val content = lazy storage.content.load();
 
     return (
          -1,
-         content.collectionMetadata,
+         storage.content,
          storage.adminAddress,
     );
 }
@@ -48,14 +43,6 @@ get fun royalty_params(): (int, int, address) {
     return (0, 0, createAddressNone() as address);
 }
 
-get fun get_nft_content(itemIndex: int, individualNftContent: Cell<SnakeString>): Cell<OffchainMetadataReply> {
-    val storage = lazy NftCollectionStorage.load();
-    val content = lazy storage.content.load();
-
-    return OffchainMetadataReply {
-        string: beginCell()
-            .storeSlice(content.commonContent.load())
-            .storeRef(individualNftContent)
-            .endCell().beginParse()
-    }.toCell()
+get fun get_nft_content(_itemIndex: int, individual_content: cell): cell {
+    return individual_content;
 }
