@@ -1,5 +1,5 @@
 import { Blockchain, SandboxContract, TreasuryContract } from '@ton/sandbox';
-import { beginCell, Cell, internal, SendMode, storeOutList, toNano } from '@ton/core';
+import { Address, beginCell, Cell, internal, SendMode, storeOutList, toNano } from '@ton/core';
 import { keyPairFromSeed, sign } from '@ton/crypto';
 import {
     addressHash,
@@ -12,9 +12,13 @@ import {
     createDeployWalletBody,
     createExternalSignedRequestBodyWithoutSignature,
     createInternalSignedRequestBodyWithoutSignature,
+    createProveOwnershipBody,
     createRemoveExtensionExtraAction,
     createSetSignatureAllowedExtraAction,
     createSnakedExtraActions,
+    parseOwnerInfo,
+    parseOwnershipProof,
+    parseOwnershipProofBounced,
     walletIndexSeedToCell,
     WalletRuntimeData,
 } from '../wrappers/AgenticWallet';
@@ -804,5 +808,233 @@ describe('AgenticWallet', () => {
 
         const extensions = await wallet.getExtensions();
         expect(extensions.get(addressHash(helperExtension.address))).toBe(true);
+    });
+
+    // --- TEP-85 SBT: prove_ownership ---
+
+    it('prove_ownership sends ownership_proof with content to dest', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 30));
+        const nftContent = beginCell().storeStringTail('sbt-item.json').endCell();
+        const runtimeData = createRuntimeData(operatorKeys, nftContent);
+        const { wallet, index } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        const forwardPayload = beginCell().storeStringTail('proof-data').endCell();
+        const result = await wallet.sendProveOwnership(owner.getSender(), toNano('0.1'), {
+            queryId: 42n,
+            dest: stranger.address,
+            forwardPayload,
+            withContent: true,
+        });
+
+        expect(result.transactions).toHaveTransaction({
+            from: wallet.address,
+            to: stranger.address,
+            success: true,
+        });
+
+        const proofTx = result.transactions.find(
+            (tx) =>
+                tx.inMessage?.info.type === 'internal' &&
+                tx.inMessage.info.src.equals(wallet.address) &&
+                tx.inMessage.info.dest.equals(stranger.address),
+        );
+        const proof = parseOwnershipProof(proofTx!.inMessage!.body);
+        expect(proof.queryId).toBe(42n);
+        expect(proof.itemId).toBe(index);
+        expect(proof.owner.equals(owner.address)).toBe(true);
+        expect(proof.data.equals(forwardPayload)).toBe(true);
+        expect(proof.revokedAt).toBe(0n);
+        expect(proof.content).not.toBeNull();
+        expect(proof.content!.equals(nftContent)).toBe(true);
+    });
+
+    it('prove_ownership omits content when withContent is false', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 31));
+        const nftContent = beginCell().storeStringTail('sbt-item.json').endCell();
+        const runtimeData = createRuntimeData(operatorKeys, nftContent);
+        const { wallet } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        const forwardPayload = beginCell().storeStringTail('no-content-proof').endCell();
+        const result = await wallet.sendProveOwnership(owner.getSender(), toNano('0.1'), {
+            queryId: 43n,
+            dest: stranger.address,
+            forwardPayload,
+            withContent: false,
+        });
+
+        const proofTx = result.transactions.find(
+            (tx) =>
+                tx.inMessage?.info.type === 'internal' &&
+                tx.inMessage.info.src.equals(wallet.address) &&
+                tx.inMessage.info.dest.equals(stranger.address),
+        );
+        const proof = parseOwnershipProof(proofTx!.inMessage!.body);
+        expect(proof.queryId).toBe(43n);
+        expect(proof.content).toBeNull();
+    });
+
+    it('prove_ownership rejects non-owner sender', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 32));
+        const runtimeData = createRuntimeData(operatorKeys);
+        const { wallet } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        const result = await wallet.sendProveOwnership(stranger.getSender(), toNano('0.1'), {
+            queryId: 44n,
+            dest: stranger.address,
+            forwardPayload: beginCell().endCell(),
+            withContent: false,
+        });
+        expect(result.transactions).toHaveTransaction({
+            from: stranger.address,
+            to: wallet.address,
+            exitCode: 50,
+            success: false,
+        });
+    });
+
+    // --- TEP-85 SBT: request_owner ---
+
+    it('request_owner sends owner_info to dest (callable by anyone)', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 33));
+        const nftContent = beginCell().storeStringTail('sbt-owner-info.json').endCell();
+        const runtimeData = createRuntimeData(operatorKeys, nftContent);
+        const { wallet, index } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        const forwardPayload = beginCell().storeStringTail('request-data').endCell();
+        const result = await wallet.sendRequestOwner(stranger.getSender(), toNano('0.1'), {
+            queryId: 50n,
+            dest: helperExtension.address,
+            forwardPayload,
+            withContent: true,
+        });
+
+        expect(result.transactions).toHaveTransaction({
+            from: wallet.address,
+            to: helperExtension.address,
+            success: true,
+        });
+
+        const infoTx = result.transactions.find(
+            (tx) =>
+                tx.inMessage?.info.type === 'internal' &&
+                tx.inMessage.info.src.equals(wallet.address) &&
+                tx.inMessage.info.dest.equals(helperExtension.address),
+        );
+        const info = parseOwnerInfo(infoTx!.inMessage!.body);
+        expect(info.queryId).toBe(50n);
+        expect(info.itemId).toBe(index);
+        expect(info.initiator.equals(stranger.address)).toBe(true);
+        expect(info.owner.equals(owner.address)).toBe(true);
+        expect(info.data.equals(forwardPayload)).toBe(true);
+        expect(info.revokedAt).toBe(0n);
+        expect(info.content).not.toBeNull();
+        expect(info.content!.equals(nftContent)).toBe(true);
+    });
+
+    it('request_owner omits content when withContent is false', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 34));
+        const nftContent = beginCell().storeStringTail('hidden.json').endCell();
+        const runtimeData = createRuntimeData(operatorKeys, nftContent);
+        const { wallet } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        const result = await wallet.sendRequestOwner(stranger.getSender(), toNano('0.1'), {
+            queryId: 51n,
+            dest: helperExtension.address,
+            forwardPayload: beginCell().endCell(),
+            withContent: false,
+        });
+
+        const infoTx = result.transactions.find(
+            (tx) =>
+                tx.inMessage?.info.type === 'internal' &&
+                tx.inMessage.info.src.equals(wallet.address) &&
+                tx.inMessage.info.dest.equals(helperExtension.address),
+        );
+        const info = parseOwnerInfo(infoTx!.inMessage!.body);
+        expect(info.queryId).toBe(51n);
+        expect(info.content).toBeNull();
+    });
+
+    // --- TEP-85 SBT: bounced ownership_proof ---
+
+    it('forwards bounced ownership_proof to owner as ownership_proof_bounced', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 35));
+        const runtimeData = createRuntimeData(operatorKeys);
+        const { wallet } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        const nonExistentDest = new Address(0, Buffer.alloc(32, 0xde));
+        const result = await wallet.sendProveOwnership(owner.getSender(), toNano('0.5'), {
+            queryId: 60n,
+            dest: nonExistentDest,
+            forwardPayload: beginCell().endCell(),
+            withContent: false,
+        });
+
+        expect(result.transactions).toHaveTransaction({
+            from: wallet.address,
+            to: nonExistentDest,
+            success: false,
+        });
+
+        const bouncedNotifTx = result.transactions.find(
+            (tx) =>
+                tx.inMessage?.info.type === 'internal' &&
+                tx.inMessage.info.src.equals(wallet.address) &&
+                tx.inMessage.info.dest.equals(owner.address) &&
+                tx.inMessage.body.beginParse().preloadUint(32) === 0xc18e86d2,
+        );
+        expect(bouncedNotifTx).toBeDefined();
+        const parsed = parseOwnershipProofBounced(bouncedNotifTx!.inMessage!.body);
+        expect(parsed.queryId).toBe(60n);
+    });
+
+    // --- TEP-85 SBT: getters ---
+
+    it('returns SBT authority addr_none and revoked_time 0', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 36));
+        const runtimeData = createRuntimeData(operatorKeys);
+        const { wallet } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        expect(await wallet.getAuthorityAddress()).toBeNull();
+        expect(await wallet.getRevokedTime()).toBe(0);
+    });
+
+    // --- SBT guard: forbidden opcodes ---
+
+    it('rejects forbidden SBT opcodes (transfer, destroy, revoke, take_excess)', async () => {
+        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 37));
+        const runtimeData = createRuntimeData(operatorKeys);
+        const { wallet } = openWalletByRuntimeData(runtimeData);
+        await deployWallet(wallet, owner, runtimeData);
+
+        const forbiddenOps = [
+            { name: 'transfer', op: 0x5fcc3d14 },
+            { name: 'destroy', op: 0x1f04537a },
+            { name: 'revoke', op: 0x6f89f5e3 },
+            { name: 'take_excess', op: 0xd136d3b3 },
+        ];
+
+        for (const { name, op } of forbiddenOps) {
+            const body = beginCell().storeUint(op, 32).storeUint(0, 64).endCell();
+            const result = await wallet.sendInternal(stranger.getSender(), {
+                value: toNano('0.05'),
+                bounce: true,
+                sendMode: SendMode.PAY_GAS_SEPARATELY,
+                body,
+            });
+            expect(result.transactions).toHaveTransaction({
+                from: stranger.address,
+                to: wallet.address,
+                exitCode: 0xffff,
+                success: false,
+            });
+        }
     });
 });

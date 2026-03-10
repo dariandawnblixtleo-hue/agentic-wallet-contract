@@ -84,9 +84,10 @@ type AllowedMessageToWallet =
     | InternalSignedRequest
     | ChangeOperatorMsg
     | ChangeNftContentMsg
+    | ProveOwnershipMsg
+    | RequestOwnerMsg
 
 type AllowedExternalMessageToWallet = ExternalSignedRequest
-
 
 fun onExternalMessage(inMsgBody: slice) {
     var signature = inMsgBody.getLastBits(SIZE_SIGNATURE);
@@ -119,8 +120,28 @@ fun onExternalMessage(inMsgBody: slice) {
     processActions(msg.outActions, msg.extraActions, true, false);
 }
 
+fun onBouncedMessage(in: InMessageBounced) {
+    in.bouncedBody.skipBouncedPrefix();
+    if (in.bouncedBody.remainingBitsCount() < 32 + 64) {
+        return;
+    }
+    val op = in.bouncedBody.loadUint(32);
+    if (op == OwnershipProofMsg.getDeclaredPackPrefix()) {
+        val queryId = in.bouncedBody.loadUint(64);
+        var storage = lazy AgenticWalletStorage.load();
+        if (storage.walletData == null) {
+            return;
+        }
+        var walletData = lazy storage.walletData.load();
+        createMessage({
+            bounce: BounceMode.NoBounce,
+            value: 0,
+            dest: walletData.ownerAddress,
+            body: OwnershipProofBouncedMsg { queryId },
+        }).send(SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
+    }
+}
 
-@on_bounced_policy("manual")        // tell the compiler "don't insert code to filter out bounced messages"
 fun onInternalMessage(in: InMessage) {
     var storage = lazy AgenticWalletStorage.load();
 
@@ -211,16 +232,53 @@ fun onInternalMessage(in: InMessage) {
             storage.save();
         }
 
+        // TEP-85 SBT: prove_ownership (owner-only)
+        ProveOwnershipMsg => {
+            var walletData = lazy storage.walletData.load();
+            assert (in.senderAddress == walletData.ownerAddress) throw ERROR_INCORRECT_SENDER;
+            createMessage({
+                bounce: BounceMode.Only256BitsOfBody,
+                value: 0,
+                dest: msg.dest,
+                body: OwnershipProofMsg {
+                    queryId: msg.queryId,
+                    itemId: storage.nftItemIndex,
+                    owner: walletData.ownerAddress,
+                    data: msg.forwardPayload,
+                    revokedAt: 0,
+                    content: msg.withContent ? walletData.nftItemContent : null,
+                },
+            }).send(SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
+        }
+
+        // TEP-85 SBT: request_owner (anyone)
+        RequestOwnerMsg => {
+            var walletData = lazy storage.walletData.load();
+            createMessage({
+                bounce: BounceMode.Only256BitsOfBody,
+                value: 0,
+                dest: msg.dest,
+                body: OwnerInfoMsg {
+                    queryId: msg.queryId,
+                    itemId: storage.nftItemIndex,
+                    initiator: in.senderAddress,
+                    owner: walletData.ownerAddress,
+                    data: msg.forwardPayload,
+                    revokedAt: 0,
+                    content: msg.withContent ? walletData.nftItemContent : null,
+                },
+            }).send(SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
+        }
+
         else => {
             // CUSTOM: bounce SBT-related operations
             // int op::destroy() asm "0x1f04537a PUSHINT";
             // int op::revoke() asm "0x6f89f5e3 PUSHINT";
             // int op::take_excess() asm "0xd136d3b3 PUSHINT";
             // int op::transfer() asm "0x5fcc3d14 PUSHINT"
-            // int op::prove_ownership() asm "0x04ded148 PUSHINT";;
             if (in.body.remainingBitsCount() >= 32) {
                 val op = in.body.loadUint(32);
-                assert (op != 0x1f04537a && op != 0x6f89f5e3 && op != 0xd136d3b3 && op != 0x5fcc3d14 && op != 0x04ded148) throw ERROR_UNKNOWN_OPERATION;
+                assert (op != 0x1f04537a && op != 0x6f89f5e3 && op != 0xd136d3b3 && op != 0x5fcc3d14) throw ERROR_UNKNOWN_OPERATION;
             }
             // if opcode is strange or body is empty at all (for instance, bounced messages)
             // just ignore, do not throw
@@ -272,15 +330,33 @@ get fun get_extensions(): map<uint256, bool>? {
     return storage.extensions;
 }
 
+struct NftDataReply {
+    isInitialized: bool
+    itemIndex: int
+    collectionAddress: address
+    ownerAddress: address? = null
+    content: cell? = null
+}
+
 // CUSTOM: NFT item getter preserved for collection indexing compatibility.
-get fun get_nft_data(): (bool, uint256, address, address?, cell?) {
+get fun get_nft_data(): NftDataReply {
     val storage = lazy AgenticWalletStorage.load();
     val walletData = loadWalletData(storage);
     if (walletData == null) {
-        return (false, storage.nftItemIndex, storage.collectionAddress, null, null);
+        return {
+            isInitialized: false,
+            itemIndex: storage.nftItemIndex,
+            collectionAddress: storage.collectionAddress
+        };
     }
     val initializedWalletData = walletData as WalletRuntimeData;
-    return (true, storage.nftItemIndex, storage.collectionAddress, initializedWalletData.ownerAddress, initializedWalletData.nftItemContent);
+    return {
+        isInitialized: true,
+        itemIndex: storage.nftItemIndex,
+        collectionAddress: storage.collectionAddress,
+        ownerAddress: initializedWalletData.ownerAddress,
+        content: initializedWalletData.nftItemContent,
+    };
 }
 
 get fun get_authority_address(): address {

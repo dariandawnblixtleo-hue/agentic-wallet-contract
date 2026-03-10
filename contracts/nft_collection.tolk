@@ -4,7 +4,7 @@ import "messages"
 import "wallet_storage"
 
 
-type AllowedMessageToNftCollection = ChangeCollectionAdminMsg
+type AllowedMessageToNftCollection = ChangeCollectionAdminMsg | ChangeCollectionContentMsg | ChangeCollectionDataAndCodeMsg;
 
 fun onInternalMessage(in: InMessage) {
     val msg = lazy AllowedMessageToNftCollection.fromSlice(in.body);
@@ -15,6 +15,20 @@ fun onInternalMessage(in: InMessage) {
             assert (in.senderAddress == storage.adminAddress) throw ERROR_INCORRECT_SENDER;
             storage.adminAddress = msg.newAdminAddress;
             storage.save();
+        }
+
+        ChangeCollectionContentMsg => {
+            var storage = lazy NftCollectionStorage.load();
+            assert (in.senderAddress == storage.adminAddress) throw ERROR_INCORRECT_SENDER;
+            storage.content = msg.newContent;
+            storage.save();
+        }
+
+        ChangeCollectionDataAndCodeMsg => {
+            var storage = lazy NftCollectionStorage.load();
+            assert (in.senderAddress == storage.adminAddress) throw ERROR_INCORRECT_SENDER;
+            contract.setData(msg.newData);
+            contract.setCodePostponed(msg.newCode);
         }
 
         else => {

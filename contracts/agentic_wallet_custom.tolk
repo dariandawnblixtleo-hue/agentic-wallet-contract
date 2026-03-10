@@ -21,18 +21,20 @@ fun assertDeploySenderAllowed(storage: AgenticWalletStorage, senderAddress: addr
 }
 
 fun initWallet(storage: AgenticWalletStorage, senderAddress: address, msg: DeployWalletMsg) {
-    assert (storage.isSignatureAllowed && storage.seqno == 0 && storage.extensions.isEmpty()) throw ERROR_INVALID_DEPLOY_DATA;
-
-    storage.walletData = msg.walletData;
     val walletData = lazy msg.walletData.load();
+
+    assert (storage.isSignatureAllowed && storage.seqno == 0 && storage.extensions.isEmpty()) throw ERROR_INVALID_DEPLOY_DATA;
     assert (walletData.operatorPublicKey == walletData.originOperatorPublicKey) throw ERROR_INVALID_DEPLOY_DATA;
+    assertDeploySenderAllowed(storage, senderAddress, walletData, msg.senderOriginOperatorPublicKey);
+
     val expectedIndex = calcWalletIndex(walletData.ownerAddress, walletData.originOperatorPublicKey, walletData.deployedByUser);
     assert (expectedIndex == storage.nftItemIndex) throw ERROR_INVALID_DEPLOY_INDEX;
-    
-    val (ownerWorkchain, _) = walletData.ownerAddress.getWorkchainAndHash();
+
+    val ownerWorkchain = walletData.ownerAddress.getWorkchain();
     val myWorkchain = contract.getAddress().getWorkchain();
     assert (ownerWorkchain == myWorkchain) throw ERROR_OWNER_WRONG_WORKCHAIN;
-    assertDeploySenderAllowed(storage, senderAddress, walletData, msg.senderOriginOperatorPublicKey);
+
+    storage.walletData = msg.walletData;
 
     storage.save();
 }
