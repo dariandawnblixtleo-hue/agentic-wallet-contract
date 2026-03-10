@@ -8,17 +8,14 @@ import {
     calculateWalletIndex,
     createAddExtensionExtraAction,
     createChangeNftContentBody,
-    createChangeOperatorBody,
     createDeployWalletBody,
     createExternalSignedRequestBodyWithoutSignature,
     createInternalSignedRequestBodyWithoutSignature,
-    createProveOwnershipBody,
     createRemoveExtensionExtraAction,
     createSetSignatureAllowedExtraAction,
     createSnakedExtraActions,
     parseOwnerInfo,
     parseOwnershipProof,
-    parseOwnershipProofBounced,
     walletIndexSeedToCell,
     WalletRuntimeData,
 } from '../wrappers/AgenticWallet';
@@ -958,40 +955,6 @@ describe('AgenticWallet', () => {
         const info = parseOwnerInfo(infoTx!.inMessage!.body);
         expect(info.queryId).toBe(51n);
         expect(info.content).toBeNull();
-    });
-
-    // --- TEP-85 SBT: bounced ownership_proof ---
-
-    it('forwards bounced ownership_proof to owner as ownership_proof_bounced', async () => {
-        const operatorKeys = keyPairFromSeed(Buffer.alloc(32, 35));
-        const runtimeData = createRuntimeData(operatorKeys);
-        const { wallet } = openWalletByRuntimeData(runtimeData);
-        await deployWallet(wallet, owner, runtimeData);
-
-        const nonExistentDest = new Address(0, Buffer.alloc(32, 0xde));
-        const result = await wallet.sendProveOwnership(owner.getSender(), toNano('0.5'), {
-            queryId: 60n,
-            dest: nonExistentDest,
-            forwardPayload: beginCell().endCell(),
-            withContent: false,
-        });
-
-        expect(result.transactions).toHaveTransaction({
-            from: wallet.address,
-            to: nonExistentDest,
-            success: false,
-        });
-
-        const bouncedNotifTx = result.transactions.find(
-            (tx) =>
-                tx.inMessage?.info.type === 'internal' &&
-                tx.inMessage.info.src.equals(wallet.address) &&
-                tx.inMessage.info.dest.equals(owner.address) &&
-                tx.inMessage.body.beginParse().preloadUint(32) === 0xc18e86d2,
-        );
-        expect(bouncedNotifTx).toBeDefined();
-        const parsed = parseOwnershipProofBounced(bouncedNotifTx!.inMessage!.body);
-        expect(parsed.queryId).toBe(60n);
     });
 
     // --- TEP-85 SBT: getters ---

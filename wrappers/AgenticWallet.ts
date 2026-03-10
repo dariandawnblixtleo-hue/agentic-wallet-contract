@@ -25,7 +25,6 @@ const OP_PROVE_OWNERSHIP = 0x04ded148;
 const OP_REQUEST_OWNER = 0xd0c3bfea;
 const OP_OWNERSHIP_PROOF = 0x0524c7ae;
 const OP_OWNER_INFO = 0x0dd607e3;
-const OP_OWNERSHIP_PROOF_BOUNCED = 0xc18e86d2;
 
 export type WalletRuntimeData = {
     ownerAddress: Address;
@@ -318,17 +317,6 @@ export function parseOwnerInfo(body: Cell) {
         data: cs.loadRef(),
         revokedAt: cs.loadUintBig(64),
         content: cs.loadMaybeRef(),
-    };
-}
-
-export function parseOwnershipProofBounced(body: Cell) {
-    const cs = body.beginParse();
-    const op = cs.loadUint(32);
-    if (op !== OP_OWNERSHIP_PROOF_BOUNCED) {
-        throw new Error(`Expected ownership_proof_bounced opcode 0x${OP_OWNERSHIP_PROOF_BOUNCED.toString(16)}, got 0x${op.toString(16)}`);
-    }
-    return {
-        queryId: cs.loadUintBig(64),
     };
 }
 

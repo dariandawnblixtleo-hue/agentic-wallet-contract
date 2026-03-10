@@ -120,28 +120,8 @@ fun onExternalMessage(inMsgBody: slice) {
     processActions(msg.outActions, msg.extraActions, true, false);
 }
 
-fun onBouncedMessage(in: InMessageBounced) {
-    in.bouncedBody.skipBouncedPrefix();
-    if (in.bouncedBody.remainingBitsCount() < 32 + 64) {
-        return;
-    }
-    val op = in.bouncedBody.loadUint(32);
-    if (op == OwnershipProofMsg.getDeclaredPackPrefix()) {
-        val queryId = in.bouncedBody.loadUint(64);
-        var storage = lazy AgenticWalletStorage.load();
-        if (storage.walletData == null) {
-            return;
-        }
-        var walletData = lazy storage.walletData.load();
-        createMessage({
-            bounce: BounceMode.NoBounce,
-            value: 0,
-            dest: walletData.ownerAddress,
-            body: OwnershipProofBouncedMsg { queryId },
-        }).send(SEND_MODE_CARRY_ALL_REMAINING_MESSAGE_VALUE);
-    }
-}
 
+@on_bounced_policy("manual")
 fun onInternalMessage(in: InMessage) {
     var storage = lazy AgenticWalletStorage.load();
 

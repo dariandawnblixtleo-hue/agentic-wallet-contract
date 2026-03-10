@@ -102,10 +102,6 @@ struct (0x0dd607e3) OwnerInfoMsg {
     content: cell?
 }
 
-struct (0xc18e86d2) OwnershipProofBouncedMsg {
-    queryId: uint64
-}
-
 struct (0x00000003) ChangeCollectionAdminMsg {
     queryId: uint64
     newAdminAddress: address
