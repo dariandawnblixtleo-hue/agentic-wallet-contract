@@ -29,9 +29,9 @@ export const Opcodes = {
     action_extended_add_extension: 0x02,
     action_extended_remove_extension: 0x03,
     action_extended_set_signature_auth_allowed: 0x04,
-    auth_extension: 0x6578746e,
-    auth_signed: 0x7369676e,
-    auth_signed_internal: 0x73696e74
+    auth_extension: 0xed84cbf0,
+    auth_signed: 0xbf235204,
+    auth_signed_internal: 0x4a3ca895
 };
 
 export type TestWallet = AgenticWalletV5Test;

@@ -6,7 +6,7 @@ import {
     bufferToUint256,
     calculateWalletIndex,
 } from '../wrappers/AgenticWallet';
-import { buildOnchainMetadata, NftCollection } from '../wrappers/NftCollection';
+import { buildOnchainMetadata, NftCollection, nftCollectionConfigToCell } from '../wrappers/NftCollection';
 import { keyPairFromSeed } from '@ton/crypto';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
@@ -101,6 +101,82 @@ describe('NftCollection', () => {
 
         const changedData = await nftCollection.getCollectionData();
         expect(changedData.adminAddress.equals(user.address)).toBe(true);
+    });
+
+    it('allows admin to change collection content', async () => {
+        const updatedContent = buildOnchainMetadata({
+            name: 'Agentic Wallets v2',
+            description: 'Updated collection metadata',
+        });
+
+        const forbidden = await nftCollection.sendChangeCollectionContent(
+            outsider.getSender(),
+            toNano('0.05'),
+            200n,
+            updatedContent,
+        );
+        expect(forbidden.transactions).toHaveTransaction({
+            from: outsider.address,
+            to: nftCollection.address,
+            exitCode: 50,
+            success: false,
+        });
+
+        const dataBefore = await nftCollection.getCollectionData();
+        expect(dataBefore.collectionMetadata.equals(collectionMetadata)).toBe(true);
+
+        const changed = await nftCollection.sendChangeCollectionContent(
+            admin.getSender(),
+            toNano('0.05'),
+            201n,
+            updatedContent,
+        );
+        expect(changed.transactions).toHaveTransaction({
+            from: admin.address,
+            to: nftCollection.address,
+            success: true,
+        });
+
+        const dataAfter = await nftCollection.getCollectionData();
+        expect(dataAfter.collectionMetadata.equals(updatedContent)).toBe(true);
+    });
+
+    it('allows admin to upgrade collection data and code', async () => {
+        const newData = nftCollectionConfigToCell({
+            adminAddress: user.address,
+            content: collectionMetadata,
+            nftItemCode: walletCode,
+        });
+
+        const forbidden = await nftCollection.sendChangeCollectionDataAndCode(
+            outsider.getSender(),
+            toNano('0.05'),
+            300n,
+            newData,
+            collectionCode,
+        );
+        expect(forbidden.transactions).toHaveTransaction({
+            from: outsider.address,
+            to: nftCollection.address,
+            exitCode: 50,
+            success: false,
+        });
+
+        const changed = await nftCollection.sendChangeCollectionDataAndCode(
+            admin.getSender(),
+            toNano('0.05'),
+            301n,
+            newData,
+            collectionCode,
+        );
+        expect(changed.transactions).toHaveTransaction({
+            from: admin.address,
+            to: nftCollection.address,
+            success: true,
+        });
+
+        const dataAfter = await nftCollection.getCollectionData();
+        expect(dataAfter.adminAddress.equals(user.address)).toBe(true);
     });
 
     it('returns onchain individual nft metadata content', async () => {

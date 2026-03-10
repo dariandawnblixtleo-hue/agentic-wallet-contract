@@ -15,12 +15,16 @@ import {
 const OP_ADD_EXTENSION = 0x02;
 const OP_REMOVE_EXTENSION = 0x03;
 const OP_SET_SIGNATURE_ALLOWED = 0x04;
-const OP_EXTENSION_ACTION_REQUEST = 0x6578746e;
+const OP_EXTENSION_ACTION_REQUEST = 0xed84cbf0;
 const OP_DEPLOY_WALLET = 0x0609e47b;
-const OP_INTERNAL_SIGNED_REQUEST = 0x73696e74;
-const OP_EXTERNAL_SIGNED_REQUEST = 0x7369676e;
+const OP_INTERNAL_SIGNED_REQUEST = 0x4a3ca895;
+const OP_EXTERNAL_SIGNED_REQUEST = 0xbf235204;
 const OP_CHANGE_OPERATOR = 0xea4e36cf;
 const OP_CHANGE_NFT_CONTENT = 0x1a0b9d51;
+const OP_PROVE_OWNERSHIP = 0x04ded148;
+const OP_REQUEST_OWNER = 0xd0c3bfea;
+const OP_OWNERSHIP_PROOF = 0x0524c7ae;
+const OP_OWNER_INFO = 0x0dd607e3;
 
 export type WalletRuntimeData = {
     ownerAddress: Address;
@@ -78,6 +82,20 @@ export type AgenticWalletNftData = {
     collectionAddress: Address;
     ownerAddress: Address | null;
     nftItemContent: Cell | null;
+};
+
+export type ProveOwnershipMessage = {
+    queryId: bigint;
+    dest: Address;
+    forwardPayload: Cell;
+    withContent: boolean;
+};
+
+export type RequestOwnerMessage = {
+    queryId: bigint;
+    dest: Address;
+    forwardPayload: Cell;
+    withContent: boolean;
 };
 
 function emptyExtensionsDict() {
@@ -249,6 +267,59 @@ export function createChangeNftContentBody(queryId: bigint, newNftItemContent: C
     return beginCell().storeUint(OP_CHANGE_NFT_CONTENT, 32).storeUint(queryId, 64).storeMaybeRef(newNftItemContent).endCell();
 }
 
+export function createProveOwnershipBody(message: ProveOwnershipMessage): Cell {
+    return beginCell()
+        .storeUint(OP_PROVE_OWNERSHIP, 32)
+        .storeUint(message.queryId, 64)
+        .storeAddress(message.dest)
+        .storeRef(message.forwardPayload)
+        .storeBit(message.withContent)
+        .endCell();
+}
+
+export function createRequestOwnerBody(message: RequestOwnerMessage): Cell {
+    return beginCell()
+        .storeUint(OP_REQUEST_OWNER, 32)
+        .storeUint(message.queryId, 64)
+        .storeAddress(message.dest)
+        .storeRef(message.forwardPayload)
+        .storeBit(message.withContent)
+        .endCell();
+}
+
+export function parseOwnershipProof(body: Cell) {
+    const cs = body.beginParse();
+    const op = cs.loadUint(32);
+    if (op !== OP_OWNERSHIP_PROOF) {
+        throw new Error(`Expected ownership_proof opcode 0x${OP_OWNERSHIP_PROOF.toString(16)}, got 0x${op.toString(16)}`);
+    }
+    return {
+        queryId: cs.loadUintBig(64),
+        itemId: cs.loadUintBig(256),
+        owner: cs.loadAddress(),
+        data: cs.loadRef(),
+        revokedAt: cs.loadUintBig(64),
+        content: cs.loadMaybeRef(),
+    };
+}
+
+export function parseOwnerInfo(body: Cell) {
+    const cs = body.beginParse();
+    const op = cs.loadUint(32);
+    if (op !== OP_OWNER_INFO) {
+        throw new Error(`Expected owner_info opcode 0x${OP_OWNER_INFO.toString(16)}, got 0x${op.toString(16)}`);
+    }
+    return {
+        queryId: cs.loadUintBig(64),
+        itemId: cs.loadUintBig(256),
+        initiator: cs.loadAddress(),
+        owner: cs.loadAddress(),
+        data: cs.loadRef(),
+        revokedAt: cs.loadUintBig(64),
+        content: cs.loadMaybeRef(),
+    };
+}
+
 export function createExtensionActionRequestBody(request: ExtensionActionRequest): Cell {
     return storeActionSection(
         beginCell()
@@ -349,6 +420,24 @@ export class AgenticWallet implements Contract {
         });
     }
 
+    async sendProveOwnership(provider: ContractProvider, via: Sender, value: bigint, message: ProveOwnershipMessage) {
+        await provider.internal(via, {
+            value,
+            bounce: true,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: createProveOwnershipBody(message),
+        });
+    }
+
+    async sendRequestOwner(provider: ContractProvider, via: Sender, value: bigint, message: RequestOwnerMessage) {
+        await provider.internal(via, {
+            value,
+            bounce: true,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: createRequestOwnerBody(message),
+        });
+    }
+
     async sendExtensionActionRequest(provider: ContractProvider, via: Sender, value: bigint, request: ExtensionActionRequest) {
         await provider.internal(via, {
             value,
@@ -428,5 +517,15 @@ export class AgenticWallet implements Contract {
             ownerAddress: result.stack.readAddressOpt(),
             nftItemContent: result.stack.readCellOpt(),
         };
+    }
+
+    async getAuthorityAddress(provider: ContractProvider): Promise<Address | null> {
+        const result = await provider.get('get_authority_address', []);
+        return result.stack.readAddressOpt();
+    }
+
+    async getRevokedTime(provider: ContractProvider): Promise<number> {
+        const result = await provider.get('get_revoked_time', []);
+        return result.stack.readNumber();
     }
 }

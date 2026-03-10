@@ -22,6 +22,8 @@ export {
 } from './buildOnchain';
 
 const OP_CHANGE_COLLECTION_ADMIN = 0x00000003;
+const OP_CHANGE_COLLECTION_CONTENT = 0x00000004;
+const OP_CHANGE_COLLECTION_DATA_AND_CODE = 0x00000005;
 
 export type CollectionContent = {
     collectionMetadata: Cell;
@@ -64,6 +66,14 @@ export function createChangeCollectionAdminBody(queryId: bigint, newAdminAddress
     return beginCell().storeUint(OP_CHANGE_COLLECTION_ADMIN, 32).storeUint(queryId, 64).storeAddress(newAdminAddress).endCell();
 }
 
+export function createChangeCollectionContentBody(queryId: bigint, newContent: Cell): Cell {
+    return beginCell().storeUint(OP_CHANGE_COLLECTION_CONTENT, 32).storeUint(queryId, 64).storeRef(newContent).endCell();
+}
+
+export function createChangeCollectionDataAndCodeBody(queryId: bigint, newData: Cell, newCode: Cell): Cell {
+    return beginCell().storeUint(OP_CHANGE_COLLECTION_DATA_AND_CODE, 32).storeUint(queryId, 64).storeRef(newData).storeRef(newCode).endCell();
+}
+
 export class NftCollection implements Contract {
     abi: ContractABI = { name: 'NftCollection' };
 
@@ -100,6 +110,37 @@ export class NftCollection implements Contract {
             bounce: true,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             body: createChangeCollectionAdminBody(queryId, newAdminAddress),
+        });
+    }
+
+    async sendChangeCollectionContent(
+        provider: ContractProvider,
+        via: Sender,
+        value: bigint,
+        queryId: bigint,
+        newContent: Cell,
+    ) {
+        await provider.internal(via, {
+            value,
+            bounce: true,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: createChangeCollectionContentBody(queryId, newContent),
+        });
+    }
+
+    async sendChangeCollectionDataAndCode(
+        provider: ContractProvider,
+        via: Sender,
+        value: bigint,
+        queryId: bigint,
+        newData: Cell,
+        newCode: Cell,
+    ) {
+        await provider.internal(via, {
+            value,
+            bounce: true,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: createChangeCollectionDataAndCodeBody(queryId, newData, newCode),
         });
     }
 
