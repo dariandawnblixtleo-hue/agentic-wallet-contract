@@ -2,6 +2,7 @@ import "errors"
 import "collection_storage"
 import "messages"
 import "wallet_storage"
+import "@stdlib/tvm-dicts"
 
 
 type AllowedMessageToNftCollection = ChangeCollectionAdminMsg | ChangeCollectionContentMsg | ChangeCollectionDataAndCodeMsg;
@@ -58,5 +59,12 @@ get fun royalty_params(): (int, int, address) {
 }
 
 get fun get_nft_content(_itemIndex: int, individual_content: cell): cell {
-    return individual_content;
+    var s = individual_content.beginParse();
+    if (s.loadUint(8) != 0) {
+        return individual_content;
+    }
+    var contentDict = s.loadDict();
+    val imageValue = beginCell().storeUint(0, 8).storeSlice("https://agents.ton.org/nft-image.png").endCell();
+    contentDict.uDictSetRef(256, stringSha256("image"), imageValue);
+    return beginCell().storeUint(0, 8).storeDict(contentDict).endCell();
 }
