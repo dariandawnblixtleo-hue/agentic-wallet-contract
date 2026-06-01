@@ -1,4 +1,4 @@
-import { Address, toNano } from '@ton/core';
+import { Address, Cell, toNano } from '@ton/core';
 import { compile, NetworkProvider } from '@ton/blueprint';
 import { buildOnchainMetadata, NftCollection, nftCollectionConfigToCell } from '../wrappers/NftCollection';
 
@@ -22,14 +22,27 @@ export async function run(provider: NetworkProvider, args: string[] = []) {
         );
     }
 
+    const { state } = await provider.getContractState(collection.address);
+    if (state.type !== 'active') {
+        throw new Error('Not active');
+    }
+    const previousCode = Cell.fromBoc(state.data!)[0].refs[1];
+
+
     const walletCode = await compile('AgenticWallet');
+    if (!previousCode.equals(walletCode)) {
+        console.log(walletCode.hash().toString('hex'));
+        console.log(previousCode.hash().toString('hex'));
+        throw new Error('Code not equals')
+    }
+
     const collectionCode = await compile('NftCollection');
     const newData = nftCollectionConfigToCell({
         adminAddress: currentData.adminAddress,
         content: buildOnchainMetadata({
-            "name": "Agentic Wallets",
-            "description": "Collection of wallets for agents on TON. Learn more on agents.ton.org",
-            "image": "https://agents.ton.org/nft-image.png"
+            name: 'Agentic Wallets',
+            description: 'Collection of wallets for agents on TON. Learn more on agents.ton.org',
+            image: 'https://agents.ton.org/icons/ton.png',
         }),
         nftItemCode: walletCode,
     });

@@ -186,7 +186,11 @@ describe('NftCollection', () => {
         });
 
         const content = await nftCollection.getNftContent(808n, individualMetadata);
-        const expected = individualMetadata;
+        const expected = buildOnchainMetadata({
+            name: 'Agentic Wallet #808',
+            description: 'Individual onchain metadata',
+            image: 'https://agents.ton.org/icons/ton.png',
+        });
 
         expect(content.equals(expected)).toBe(true);
     });
