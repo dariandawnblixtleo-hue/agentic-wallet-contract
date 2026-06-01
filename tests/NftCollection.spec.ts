@@ -195,6 +195,23 @@ describe('NftCollection', () => {
         expect(content.equals(expected)).toBe(true);
     });
 
+    it('returns onchain individual nft metadata content without overrides', async () => {
+        const individualMetadata = buildOnchainMetadata({
+            name: 'Agentic Wallet #808',
+            description: 'Individual onchain metadata',
+            image: 'https://example.com/custom.png',
+        });
+
+        const content = await nftCollection.getNftContent(808n, individualMetadata);
+        const expected = buildOnchainMetadata({
+            name: 'Agentic Wallet #808',
+            description: 'Individual onchain metadata',
+            image: 'https://example.com/custom.png',
+        });
+
+        expect(content.equals(expected)).toBe(true);
+    });
+
     it('derives wallet address by index consistently with local state init', async () => {
         const runtimeData = createRuntimeData();
         const itemIndex = calculateWalletIndex(runtimeData.ownerAddress, runtimeData.originOperatorPublicKey, true);
