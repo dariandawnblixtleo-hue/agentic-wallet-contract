@@ -64,7 +64,11 @@ get fun get_nft_content(_itemIndex: int, individual_content: cell): cell {
         return individual_content;
     }
     var contentDict = s.loadDict();
-    val imageValue = beginCell().storeUint(0, 8).storeSlice("https://agents.ton.org/icons/ton.png").endCell();
+    val imageKey = stringSha256("image");
+    if (contentDict.uDictHasKey(256, imageKey)) {
+        return individual_content;
+    }
+    val imageValue = beginCell().storeUint(0, 8).storeSlice("https://agents.ton.org/nft-image.png").endCell();
     contentDict.uDictSetRef(256, stringSha256("image"), imageValue);
     return beginCell().storeUint(0, 8).storeDict(contentDict).endCell();
 }
